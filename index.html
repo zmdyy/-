@@ -425,6 +425,10 @@
                 <label>显示数值:</label>
                 <input type="checkbox" id="trendShowLabels" checked>
             </div>
+            <div class="control-group">
+                <label>显示年级均分:</label>
+                <input type="checkbox" id="trendShowGradeAvg">
+            </div>
         </div>
     </div>
 
@@ -605,6 +609,54 @@ let trendDisplayMode = 'ranking';
 let collectiveThreshold = 60;
 
 const DISTINCT_COLORS = ['#FFD700','#FFB6C1','#87CEFA','#90EE90','#DDA0DD','#FFA07A','#F0E68C','#E0FFFF','#FF6347','#C0C0C0','#98FB98','#AFEEEE','#DB7093','#FFE4B5','#B0C4DE','#FFDEAD','#5F9EA0','#D2B48C','#BC8F8F','#F4A460'];
+
+function utilGetTitle(h) {
+    var s = String(h);
+    var m = s.match(/^(.*)[（(]([\d.]+分)[）)]$/);
+    if (m && m[1]) return m[1].replace(/_/g, '').replace(/_c\d+$|_col\d+$/g, '').trim();
+    m = s.match(/^(.+?)[（(]/);
+    return m ? m[1].replace(/_/g, '').replace(/_c\d+$|_col\d+$/g, '').trim() : s.replace(/_/g, '').replace(/_c\d+$|_col\d+$/g, '').trim();
+}
+function utilGetTitleAns(h) {
+    var s = String(h).replace(/_答案$/, '');
+    var m = s.match(/^(.*)[（(]([\d.]+分)[）)]$/);
+    if (m && m[1]) return m[1].replace(/_/g, '').replace(/_c\d+$|_col\d+$/g, '').trim();
+    m = s.match(/^(.+?)[（(]/);
+    return m ? m[1].replace(/_/g, '').replace(/_c\d+$|_col\d+$/g, '').trim() : s.replace(/_/g, '').replace(/_c\d+$|_col\d+$/g, '').trim();
+}
+function utilGetSubjectFromHeader(h) {
+    var parts = String(h).split('_');
+    return parts.length > 1 ? parts[0] : '';
+}
+function utilSplitHeaderCols(headers) {
+    var scoreCols = [], ansCols = [];
+    headers.forEach(function(h, idx) {
+        if (!h) return;
+        if (h.includes('_答案')) ansCols.push({ header: h, idx: idx });
+        else if (h.includes('_') && !h.endsWith('_分数') && !h.endsWith('_等级')) scoreCols.push({ header: h, idx: idx });
+    });
+    return { scoreCols: scoreCols, ansCols: ansCols };
+}
+function utilBuildQuestionDict(scoreCols, ansCols, fd, ss) {
+    var qd = {};
+    scoreCols.forEach(function(c) {
+        var t = utilGetTitle(c.header);
+        var hSubj = utilGetSubjectFromHeader(c.header);
+        if (ss && hSubj !== ss) return;
+        if (!qd[t]) qd[t] = {};
+        qd[t].scoreIdx = c.idx; qd[t].scoreHeader = c.header;
+        qd[t].fullScore = fd.fullScoreMap[c.header] != null ? fd.fullScoreMap[c.header] : null;
+    });
+    ansCols.forEach(function(c) {
+        var t = utilGetTitleAns(c.header);
+        var hSubj = utilGetSubjectFromHeader(c.header);
+        if (ss && hSubj !== ss) return;
+        if (!qd[t]) qd[t] = {};
+        qd[t].ansIdx = c.idx; qd[t].ansHeader = c.header;
+    });
+    return qd;
+}
+
 const AI_PROMPT_PREFIX = ['# 角色与任务','你是一位拥有 10 年一线教学数据分析经验的资深教育数据分析师，擅长从大规模考试数据中精准定位学生的知识薄弱点、能力短板，并提供分层级、可落地的提分方案。','','请严格依据下方提供的 JSON 成绩数据，为指定学生生成一份**个性化、诊断性、可执行**的学情分析报告。','','','---','','# 关于输出格式的重要说明','你只能输出纯文本。请将分析结果以 **完整的 Markdown 格式文本** 输出在聊天框中。','用户收到后将手动全选、复制、粘贴到本地文本编辑器（如记事本），保存为 `.md` 文件后可在 Typora/Obsidian/VSCode 等工具中打开查看，或在 Word/WPS 中导入。','请勿尝试创建任何文件、调用任何下载功能——这不在你的能力范围内，强行尝试会产生无法处理的结果。','','','---','','# 输入数据说明','- JSON 中包含学生姓名、班级、各科得分、等级、排名，以及 `weakScoreRateThreshold`。','- `subjectFullMarks`：用户配置的各科满分参考，已自动并入常见异名。','- **重要**：禁止推算「全科统一口径下的总得分率」或强行合成总百分制得分率。','- 重点关注：`subjects` 下各科的 `score`、`grade`、`schoolRank`/`classRank`/`gradeRank`，以及 `weakSubScores`。','- 若存在 `paperMarkdown`/`paperMarkdowns`：可结合题干摘录辅助定位知识点；无摘录时不得臆测。','**知识点推断（硬约束）**：仅在以下条件满足时才允许写具体；否则必须写：无法从现有数据精确定位（需题干/考点标签）。','- ⚡ 重要：「小题/题型薄弱环节」表格中若"对应知识点"列显示"见1.4节"，务必先读完 1.4 节再回头为本题标注知识点。禁止在未读原文的情况下输出"无法定位"。','','','---','','# 分析要求','1. **总分定位与趋势**：用排名位次描述竞争位置；逐科分析 Section 2 中该生的排名路径变化（判断持续进步/退步/波动），结合 Section 3 交叉洞察给出结构性判断；不推算总得分率。','2. **单科表现**：对比各科等级与排名，明确优势学科与短板学科。','3. **小题归因**：逐科遍历 `weakSubScores.items`；完成表格；不得臆测。','4. **分层建议**：短期（1周）、中期（2周）；点名知识点。','5. **计划清单**：用 `[ ]` 复选框。','','','---','','# 输出规范','- 仅输出Markdown；章节标题必须与 `outputSpec.requiredSections` 逐字一致（## 二级标题）。','- 关键结论加粗；优先用表格；末尾附鼓励性结语。','- 版式：章节标题四号黑体加粗；正文宋体小四；数字/英文 Times New Roman。','- 「小题/题型薄弱环节」表格必须含列：题号/模块 | 对应知识点 | 得分/满分 | 得分率 | 学生答案→正确答案 | 失分诊断。','','','---','','# 语言风格','专业、客观、富有建设性；少套话，多可执行动作。','','','---','','# 输入（JSON）','以下为你的输入数据（请只依据该 JSON 生成报告）：',''].join('\n');
 
 // ============================================================
@@ -747,11 +799,25 @@ function renderPdfList() {
     st.textContent = `已上传${uploadedPdfs.length}个（成功${rc}）`;
     uploadedPdfs.forEach(p => {
         const li = document.createElement('li');
-        li.innerHTML = `${p.fileName} <span>(${p.status === 'ready' ? '已解析' : p.status === 'parsing' ? '解析中...' : '失败'})</span><span style="display:flex;gap:4px;"><button onclick="removePdf('${p.id}')">移除</button></span>`;
+        var exportBtn = p.status === 'ready' ? '<button onclick="exportPdfMarkdown(\'' + p.id + '\')" style="background:#2ecc71;color:#fff;border:none;padding:2px 7px;border-radius:3px;cursor:pointer;font-size:11px;">导出MD</button>' : '';
+        li.innerHTML = p.fileName + ' <span>(' + (p.status === 'ready' ? '已解析' : p.status === 'parsing' ? '解析中...' : '失败') + ')</span><span style="display:flex;gap:4px;">' + exportBtn + '<button onclick="removePdf(\'' + p.id + '\')">移除</button></span>';
         ul.appendChild(li);
     });
 }
 window.removePdf = (id) => { uploadedPdfs = uploadedPdfs.filter(p => p.id !== id); renderPdfList(); };
+function exportPdfMarkdown(id) {
+    var p = uploadedPdfs.find(function(p) { return p.id === id; });
+    if (!p || !p.markdown) return;
+    var blob = new Blob(['\uFEFF' + p.markdown], { type: 'text/markdown;charset=utf-8' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = p.fileName.replace(/\.pdf$/i, '') + '.md';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+}
+window.exportPdfMarkdown = exportPdfMarkdown;
 
 function renderFileList() {
     const mu = document.getElementById('mainFileList'), su = document.getElementById('subFileList');
@@ -1479,7 +1545,9 @@ function renderScoreDistChart() {
         const b = Math.round(71 * (1 - ratio) + 174 * ratio);
         colors.push('rgb(' + r + ',' + g + ',' + b + ')');
     }
+    if (chartDom.__chart) try { chartDom.__chart.dispose(); } catch(e) {}
     const myChart = echarts.init(chartDom);
+    chartDom.__chart = myChart;
     myChart.setOption({
         tooltip: { trigger: 'axis', formatter: function(p) { const d = p[0]; return d.name + '<br/>人数: ' + d.value + (buckets[d.dataIndex].names.length ? '<br/>含: ' + buckets[d.dataIndex].names.join(', ') : ''); } },
         grid: { left: '12%', right: '5%', bottom: 0, top: 5, containLabel: true },
@@ -1487,7 +1555,6 @@ function renderScoreDistChart() {
         yAxis: { type: 'category', data: buckets.map(function(b) { return b.label; }), axisLabel: { fontSize: 11 } },
         series: [{ type: 'bar', data: buckets.map(function(b, i) { return { value: b.count, itemStyle: { color: colors[i] || '#3498db' } }; }), label: { show: true, position: 'right' } }]
     });
-    window.addEventListener('resize', function() { try { myChart.resize(); } catch(e) {} });
 }
 
 function renderCollectiveClassFilter() {
@@ -1530,41 +1597,9 @@ function renderCollectiveTables() {
         document.querySelector('#lowStatsTable tbody').innerHTML = '<tr><td colspan="8">暂无数据</td></tr>';
         return;
     }
-    const scoreCols = [], ansCols = [];
-    fd.headers.forEach((h, idx) => {
-        if (!h) return;
-        if (h.includes('_答案')) ansCols.push({ header: h, idx });
-        else if (h.includes('_') && !h.endsWith('_分数') && !h.endsWith('_等级')) scoreCols.push({ header: h, idx });
-    });
-    const getTitle = (h) => {
-        // V3 approach: cut off trailing score pattern (X分) first, then clean
-        var s = String(h);
-        var m = s.match(/^(.*)[（(]([\d.]+分)[）)]$/);
-        if (m && m[1]) return m[1].replace(/_/g, '').replace(/_c\d+$|_col\d+$/g, '').trim();
-        m = s.match(/^(.+?)[（(]/);
-        return m ? m[1].replace(/_/g, '').replace(/_c\d+$|_col\d+$/g, '').trim() : s.replace(/_/g, '').replace(/_c\d+$|_col\d+$/g, '').trim();
-    };
-    var getTitleAns = function(h) { var s = String(h).replace(/_答案$/, ''); var m = s.match(/^(.*)[（(]([\d.]+分)[）)]$/); if (m && m[1]) return m[1].replace(/_/g, '').replace(/_c\d+$|_col\d+$/g, '').trim(); m = s.match(/^(.+?)[（(]/); return m ? m[1].replace(/_/g, '').replace(/_c\d+$|_col\d+$/g, '').trim() : s.replace(/_/g, '').replace(/_c\d+$|_col\d+$/g, '').trim(); };
-    const getSubjectFromHeader = (h) => {
-        const parts = h.split('_');
-        return parts.length > 1 ? parts[0] : '';
-    };
-    const qd = {};
-    scoreCols.forEach(c => {
-        const t = getTitle(c.header);
-        const hSubj = getSubjectFromHeader(c.header);
-        if (ss && hSubj !== ss) return;
-        if (!qd[t]) qd[t] = {};
-        qd[t].scoreIdx = c.idx; qd[t].scoreHeader = c.header;
-        qd[t].fullScore = fd.fullScoreMap[c.header] != null ? fd.fullScoreMap[c.header] : null;
-    });
-    ansCols.forEach(c => {
-        const t = getTitleAns(c.header);
-        const hSubj = getSubjectFromHeader(c.header);
-        if (ss && hSubj !== ss) return;
-        if (!qd[t]) qd[t] = {};
-        qd[t].ansIdx = c.idx; qd[t].ansHeader = c.header;
-    });
+    var hc = utilSplitHeaderCols(fd.headers);
+    var scoreCols = hc.scoreCols, ansCols = hc.ansCols;
+    var qd = utilBuildQuestionDict(scoreCols, ansCols, fd, ss);
     const allRows = [], lowRows = [];
     Object.keys(qd).forEach(t => {
         const item = qd[t]; if (item.scoreIdx == null) return;
@@ -1617,14 +1652,9 @@ function renderRankedAnalysis() {
     if (start > ranked.length) { res.innerHTML = '<div class="error">起始名次超出范围</div>'; return; }
     const selected = ranked.slice(start - 1, end);
     if (!selected.length) { res.innerHTML = '<div class="error">选定名次范围内无学生</div>'; return; }
-    const scoreCols = [], ansCols = [];
-    fd.headers.forEach((h, idx) => { if (!h) return; if (h.includes('_答案')) ansCols.push({ header: h, idx }); else if (h.includes('_') && !h.endsWith('_分数') && !h.endsWith('_等级')) scoreCols.push({ header: h, idx }); });
-    var getT = function(h) { var m = String(h).match(/^(.*)[（(]([\d.]+分)[）)]$/); if (m && m[1]) return m[1].replace(/_/g,'').replace(/_c\d+$|_col\d+$/g,'').trim(); m = String(h).match(/^(.+?)[（(]/); return m ? m[1].replace(/_/g,'').replace(/_c\d+$|_col\d+$/g,'').trim() : String(h).replace(/_/g,'').replace(/_c\d+$|_col\d+$/g,'').trim(); };
-    var getTA = function(h) { var s = String(h).replace(/_答案$/,''); var m = s.match(/^(.*)[（(]([\d.]+分)[）)]$/); if (m && m[1]) return m[1].replace(/_/g,'').replace(/_c\d+$|_col\d+$/g,'').trim(); m = s.match(/^(.+?)[（(]/); return m ? m[1].replace(/_/g,'').replace(/_c\d+$|_col\d+$/g,'').trim() : s.replace(/_/g,'').replace(/_c\d+$|_col\d+$/g,'').trim(); };
-    const getSubj = (h) => { const p = h.split('_'); return p.length > 1 ? p[0] : ''; };
-    const qd = {};
-    scoreCols.forEach(c => { const t = getT(c.header); if (ss && getSubj(c.header) !== ss) return; if (!qd[t]) qd[t] = {}; qd[t].scoreIdx = c.idx; qd[t].scoreHeader = c.header; qd[t].fullScore = fd.fullScoreMap[c.header] != null ? fd.fullScoreMap[c.header] : null; });
-    ansCols.forEach(c => { const t = getTA(c.header); if (ss && getSubj(c.header) !== ss) return; if (!qd[t]) qd[t] = {}; qd[t].ansIdx = c.idx; qd[t].ansHeader = c.header; });
+    var hc = utilSplitHeaderCols(fd.headers);
+    var scoreCols = hc.scoreCols, ansCols = hc.ansCols;
+    var qd = utilBuildQuestionDict(scoreCols, ansCols, fd, ss);
     const qo = Object.keys(qd);
     let html = `<div style="font-weight:bold;color:#2980b9;">分析对象：${selected.map(s=>s[fd.nameField]).join('、')}</div>`;
     html += '<div class="scroll-container" style="max-height:300px;"><table><thead><tr><th>题目</th><th>分值表头</th><th>得分均值</th><th>最高分</th><th>最低分</th><th>错选分布</th><th>得分率(%)</th></tr></thead><tbody>';
@@ -1658,14 +1688,9 @@ function renderLevelAnalysis() {
     const ss = getSelectedSubject();
     const ct = sc ? (/\u73ed$/.test(sc)?sc:sc+'班') : '全部班级';
     if (!fd.fullScoreField) { res.innerHTML = '<div class="error">未检测到全卷字段</div>'; return; }
-    const scoreCols = [], ansCols = [];
-    fd.headers.forEach((h, idx) => { if (!h) return; if (h.includes('_答案')) ansCols.push({ header: h, idx }); else if (h.includes('_') && !h.endsWith('_分数') && !h.endsWith('_等级')) scoreCols.push({ header: h, idx }); });
-    var getT = function(h) { var m = String(h).match(/^(.*)[（(]([\d.]+分)[）)]$/); if (m && m[1]) return m[1].replace(/_/g,'').replace(/_c\d+$|_col\d+$/g,'').trim(); m = String(h).match(/^(.+?)[（(]/); return m ? m[1].replace(/_/g,'').replace(/_c\d+$|_col\d+$/g,'').trim() : String(h).replace(/_/g,'').replace(/_c\d+$|_col\d+$/g,'').trim(); };
-    var getTA = function(h) { var s = String(h).replace(/_答案$/,''); var m = s.match(/^(.*)[（(]([\d.]+分)[）)]$/); if (m && m[1]) return m[1].replace(/_/g,'').replace(/_c\d+$|_col\d+$/g,'').trim(); m = s.match(/^(.+?)[（(]/); return m ? m[1].replace(/_/g,'').replace(/_c\d+$|_col\d+$/g,'').trim() : s.replace(/_/g,'').replace(/_c\d+$|_col\d+$/g,'').trim(); };
-    const getSubj = (h) => { const p = h.split('_'); return p.length > 1 ? p[0] : ''; };
-    const qd = {};
-    scoreCols.forEach(c => { const t = getT(c.header); if (ss && getSubj(c.header) !== ss) return; if (!qd[t]) qd[t] = {}; qd[t].scoreIdx = c.idx; qd[t].scoreHeader = c.header; qd[t].fullScore = fd.fullScoreMap[c.header] != null ? fd.fullScoreMap[c.header] : null; });
-    ansCols.forEach(c => { const t = getTA(c.header); if (ss && getSubj(c.header) !== ss) return; if (!qd[t]) qd[t] = {}; qd[t].ansIdx = c.idx; qd[t].ansHeader = c.header; });
+    var hc = utilSplitHeaderCols(fd.headers);
+    var scoreCols = hc.scoreCols, ansCols = hc.ansCols;
+    var qd = utilBuildQuestionDict(scoreCols, ansCols, fd, ss);
     const qo = Object.keys(qd);
     let html = '';
     levels.forEach(lv => {
@@ -1694,14 +1719,9 @@ function showCollectiveStudentDetail(name) {
     const filtered = fd.data.filter(r => r[fd.nameField] == name);
     if (!filtered.length) { res.innerHTML = `<div class="error">未找到学生（${name}）</div>`; return; }
     const stu = filtered[0];
-    const scoreCols = [], ansCols = [];
-    fd.headers.forEach((h, idx) => { if (!h) return; if (h.includes('_答案')) ansCols.push({ header: h, idx }); else if (h.includes('_') && !h.endsWith('_分数') && !h.endsWith('_等级')) scoreCols.push({ header: h, idx }); });
-    var getT = function(h) { var m = String(h).match(/^(.*)[（(]([\d.]+分)[）)]$/); if (m && m[1]) return m[1].replace(/_/g,'').replace(/_c\d+$|_col\d+$/g,'').trim(); m = String(h).match(/^(.+?)[（(]/); return m ? m[1].replace(/_/g,'').replace(/_c\d+$|_col\d+$/g,'').trim() : String(h).replace(/_/g,'').replace(/_c\d+$|_col\d+$/g,'').trim(); };
-    var getTA = function(h) { var s = String(h).replace(/_答案$/,''); var m = s.match(/^(.*)[（(]([\d.]+分)[）)]$/); if (m && m[1]) return m[1].replace(/_/g,'').replace(/_c\d+$|_col\d+$/g,'').trim(); m = s.match(/^(.+?)[（(]/); return m ? m[1].replace(/_/g,'').replace(/_c\d+$|_col\d+$/g,'').trim() : s.replace(/_/g,'').replace(/_c\d+$|_col\d+$/g,'').trim(); };
-    const getSubj = (h) => { const p = h.split('_'); return p.length > 1 ? p[0] : ''; };
-    const qd = {};
-    scoreCols.forEach(c => { const t = getT(c.header); if (ss && getSubj(c.header) !== ss) return; if (!qd[t]) qd[t] = {}; qd[t].scoreIdx = c.idx; qd[t].scoreHeader = c.header; qd[t].fullScore = fd.fullScoreMap[c.header] != null ? fd.fullScoreMap[c.header] : null; });
-    ansCols.forEach(c => { const t = getTA(c.header); if (ss && getSubj(c.header) !== ss) return; if (!qd[t]) qd[t] = {}; qd[t].ansIdx = c.idx; qd[t].ansHeader = c.header; });
+    var hc = utilSplitHeaderCols(fd.headers);
+    var scoreCols = hc.scoreCols, ansCols = hc.ansCols;
+    var qd = utilBuildQuestionDict(scoreCols, ansCols, fd, ss);
     // Compute all stats
     const qo = Object.keys(qd);
     const allStats = {};
@@ -1737,6 +1757,7 @@ const TREND_SUBJECTS = [
     { id: 'chemistry', name: '化学' }, { id: 'bioGeo', name: '生物/地理' }
 ];
 const RAW_SUBJ_IDS = ['chinese','math','english','englishListening','physics','history','daofa','chemistry','biology','geography'];
+const COMBINED_SUBJECT_NAMES = new Set(['理综','文综','物化','理化','物化合并','物理和化学','英语合并','英语总分','理化生','物化生','政史地','文理综合','大综合']);
 
 function buildParsedSheetsFromAllBatches() {
     if (DataPool.batches.length === 0) return null;
@@ -1776,6 +1797,7 @@ function buildParsedSheetsFromAllBatches() {
                 var aliasList = aliases[id] || [];
                 for (var ai = 0; ai < aliasList.length; ai++) {
                     var trySn = aliasList[ai];
+                    if (COMBINED_SUBJECT_NAMES.has(trySn)) continue;
                     var tryScore = parseFloat(s.subjects[trySn]?.score);
                     if (!isNaN(tryScore)) { foundScore = tryScore; break; }
                 }
@@ -1810,6 +1832,18 @@ function buildParsedSheetsFromAllBatches() {
             subjRanks[id] = compRank(Object.values(ed.students).map(s => ({ key: String(s.name).trim(), value: s.scores[id] })));
         });
         return { total: totalRanks, subjects: subjRanks };
+    });
+
+    // Compute per-exam grade average scores
+    const examAverages = examData.map(function(ed) {
+        var allTotals = Object.values(ed.students).map(function(s) { return s.total; }).filter(function(v) { return v != null && !isNaN(v); });
+        var totalAvg = allTotals.length ? allTotals.reduce(function(a,b){return a+b;},0) / allTotals.length : null;
+        var subjAvgs = {};
+        RAW_SUBJ_IDS.forEach(function(id) {
+            var scores = Object.values(ed.students).map(function(s) { return s.scores[id]; }).filter(function(v) { return v != null && !isNaN(v); });
+            subjAvgs[id] = scores.length ? scores.reduce(function(a,b){return a+b;},0) / scores.length : null;
+        });
+        return { total: totalAvg, subjects: subjAvgs };
     });
 
     const totalRows = nameKeys.map(nk => {
@@ -1915,7 +1949,22 @@ function buildParsedSheetsFromAllBatches() {
         };
     });
 
-    return { total: { headers: ['姓名'].concat(examLabels), rows: totalRows }, totalScores: { headers: ['姓名'].concat(examLabels), rows: totalScoreRows }, radar: { headers: radarHeaders, rows: radarRows }, radarScores: { headers: radarHeaders, rows: radarRatesRows }, subjects, subjectScores, radarAllRanks: radarAllRanks, radarAllRates: radarAllRates, examLabels: examLabels };
+    // Per-exam grade average score rates for radar
+    var radarGradeAvgRates = examData.map(function(ed, ei) {
+        var row = [];
+        radarCols.forEach(function(c) {
+            var scores = Object.values(ed.students).map(function(s) { return s.scores[c.id]; }).filter(function(v) { return v != null && !isNaN(v); });
+            if (scores.length) {
+                var avg = scores.reduce(function(a,b){return a+b;},0) / scores.length;
+                var fm = snToFullMark(c.label);
+                if (fm != null && fm > 0) row.push(Math.round(avg / fm * 100));
+                else row.push(Math.round(avg));
+            } else { row.push(''); }
+        });
+        return { label: ed.label, row: ['年级均分'].concat(row) };
+    });
+
+    return { total: { headers: ['姓名'].concat(examLabels), rows: totalRows }, totalScores: { headers: ['姓名'].concat(examLabels), rows: totalScoreRows }, radar: { headers: radarHeaders, rows: radarRows }, radarScores: { headers: radarHeaders, rows: radarRatesRows }, subjects, subjectScores, radarAllRanks: radarAllRanks, radarAllRates: radarAllRates, radarGradeAvgRates: radarGradeAvgRates, examAverages: examAverages, examLabels: examLabels };
 }
 
 function initTrendCharts() {
@@ -2012,20 +2061,26 @@ function updateTrendDisplay() {
     var fs = cfg.fontSize, lc = cfg.lineColor, psym = cfg.pointStyle === 'none' ? 'none' : cfg.pointStyle;
 
     // Total chart
+    var showAvg = !isRank && el('trendShowGradeAvg')?.checked;
     var tc = trendEchartsInst['totalRankChartContainer'];
     if (tc) {
         var ds = isRank ? ps.total : ps.totalScores;
         var row = findRowData(ds, name);
         if (row && row.values.length > 0) {
+            var tSeries = [{ type: 'line', smooth: false, data: row.values, symbol: psym, symbolSize: cfg.pointSize, lineStyle: { width: cfg.lineWidth }, color: lc,
+                label: { show: cfg.showLabels, position: 'top', fontSize: fs - 2, formatter: function(p) { return p.value !== null ? (isRank && Number.isInteger(p.value) ? p.value : (typeof p.value === 'number' ? p.value.toFixed(1) : '')) : ''; } },
+                areaStyle: { color: new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color: lc + '80'},{offset:1,color: lc + '00'}]) }
+            }];
+            if (showAvg && ps.examAverages && ps.examAverages.length) {
+                tSeries.push({ type: 'line', name: '年级均分', data: ps.examAverages.map(function(a) { return a.total; }), symbol: 'circle', symbolSize: 4, lineStyle: { width: 1, type: 'dashed' }, color: '#999', label: { show: false } });
+            }
             tc.setOption({
                 tooltip: { trigger: 'axis', textStyle: { fontSize: fs - 2 } },
-                grid: { left: '12%', right: '8%', bottom: '20%', top: '12%', containLabel: true },
+                legend: showAvg ? { show: true, top: '0%', right: '8%', textStyle: { fontSize: fs - 2 } } : undefined,
+                grid: { left: '12%', right: '8%', bottom: '20%', top: showAvg ? '18%' : '12%', containLabel: true },
                 xAxis: { type: 'category', data: row.labels, boundaryGap: true, axisTick: { alignWithLabel: true }, axisLabel: { rotate: 35, fontSize: fs - 2, interval: 0, overflow: 'break', width: 60 } },
                 yAxis: { type: 'value', name: isRank ? '排名' : '分数', scale: true, minInterval: isRank ? 1 : null, nameTextStyle: { fontSize: fs - 2 }, axisLabel: { fontSize: fs - 2, formatter: yFmt, color: '#000' } },
-                series: [{ type: 'line', smooth: false, data: row.values, symbol: psym, symbolSize: cfg.pointSize, lineStyle: { width: cfg.lineWidth }, color: lc,
-                    label: { show: cfg.showLabels, position: 'top', fontSize: fs - 2, formatter: function(p) { return p.value !== null ? (isRank && Number.isInteger(p.value) ? p.value : (typeof p.value === 'number' ? p.value.toFixed(1) : '')) : ''; } },
-                    areaStyle: { color: new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color: lc + '80'},{offset:1,color: lc + '00'}]) }
-                }]
+                series: tSeries
             }, true);
             tc.resize();
         } else tc.clear();
@@ -2100,26 +2155,40 @@ function updateTrendDisplay() {
                     });
                     var colors = ['#5470c6','#91cc75','#fac858','#ee6666','#73c0de','#3ba272','#fc8452','#9a60b4'];
                     var shapes = ['circle','triangle','diamond','rect','roundRect','pin','arrow','none'];
-                    var lineTypes = ['solid','dashed','dotted'];
                     var series = allValues.map(function(av) {
                         var exam = radarAllSource[av.idx];
                         var color = colors[av.idx % colors.length];
                         var shape = shapes[av.idx % shapes.length];
-                        var ltype = lineTypes[av.idx % lineTypes.length];
                         return {
                             type: 'radar', name: exam.label, data: [{
                                 value: av.values.map(function(v) { return v != null ? v : (isRank ? maxVal : 0); }),
                                 name: exam.label
                             }],
                             symbol: shape, symbolSize: cfg.pointSize,
-                            lineStyle: { width: cfg.lineWidth, type: ltype },
+                            lineStyle: { width: cfg.lineWidth, type: 'solid' },
                             itemStyle: { color: color },
                             areaStyle: { opacity: 0.1 }
                         };
                     });
+                    // Add grade average reference line for score mode (only when single exam selected)
+                    if (!isRank && ps.radarGradeAvgRates && selectedIndices.length === 1) {
+                        var gradeAvg = ps.radarGradeAvgRates[selectedIndices[0]];
+                        if (gradeAvg) {
+                            var avgVals = activeColIndices.map(function(ci) { var v = gradeAvg.row[ci + 1]; var x = parseFloat(v); return isNaN(x) ? null : x; });
+                            if (avgVals.some(function(v) { return v != null; })) {
+                                series.push({
+                                    type: 'radar', name: gradeAvg.label, data: [{ value: avgVals.map(function(v) { return v != null ? v : 0; }), name: gradeAvg.label }],
+                                    symbol: 'circle', symbolSize: Math.min(cfg.pointSize, 5),
+                                    lineStyle: { width: 1, type: 'solid' },
+                                    itemStyle: { color: '#999' },
+                                    areaStyle: { opacity: 0 }
+                                });
+                            }
+                        }
+                    }
                     rc.setOption({
                         tooltip: { trigger: 'item', textStyle: { fontSize: fs - 2 } },
-                        legend: { show: series.length > 1, orient: 'vertical', top: 0, right: 0, textStyle: { fontSize: 10 } },
+                        legend: { show: series.length > 1 || (!isRank && ps.radarGradeAvgRates && ps.radarGradeAvgRates.length > 0), orient: 'vertical', top: 0, right: 0, textStyle: { fontSize: 10 } },
                         radar: { indicator: indicators, center: ['50%','45%'], radius: '65%', startAngle: 90, splitNumber: 4, axisName: { fontSize: fs - 1, color: '#000' },
                             splitLine: { lineStyle: { color: '#ccc' } },
                             splitArea: { show: true, areaStyle: { color: ['rgba(238,197,102,0.1)','rgba(121,143,150,0.1)','rgba(165,182,218,0.1)','rgba(200,200,200,0.1)'].reverse() } },
@@ -2164,18 +2233,26 @@ function updateTrendDisplay() {
                     if (!seenL.has(l)) { seenL.add(l); orderedLabels.push(l); }
                 });
             });
+            var labelFmt = function(p) { return p.value !== null ? (isRank && Number.isInteger(p.value) ? p.value : (typeof p.value === 'number' ? p.value.toFixed(1) : '')) : ''; };
             var series = [];
-            if (db && db.values.length > 0) series.push({ name: '生物', type: 'line', data: orderedLabels.map(function(l) { var i = db.labels.indexOf(l); return i >= 0 ? db.values[i] : null; }), lineStyle: { type: 'solid' }, symbol: psym, color: lc });
-            if (dg && dg.values.length > 0) series.push({ name: '地理', type: 'line', data: orderedLabels.map(function(l) { var i = dg.labels.indexOf(l); return i >= 0 ? dg.values[i] : null; }), lineStyle: { type: 'dashed' }, symbol: 'diamond', color: '#fac858' });
+            if (db && db.values.length > 0) series.push({ name: '生物', type: 'line', data: orderedLabels.map(function(l) { var i = db.labels.indexOf(l); return i >= 0 ? db.values[i] : null; }), lineStyle: { type: 'solid' }, symbol: psym, color: lc, label: { show: cfg.showLabels, position: 'top', fontSize: fs - 4, formatter: labelFmt } });
+            if (dg && dg.values.length > 0) series.push({ name: '地理', type: 'line', data: orderedLabels.map(function(l) { var i = dg.labels.indexOf(l); return i >= 0 ? dg.values[i] : null; }), lineStyle: { type: 'dashed' }, symbol: 'diamond', color: '#fac858', label: { show: cfg.showLabels, position: 'top', fontSize: fs - 4, formatter: labelFmt } });
+            // Add grade averages for bioGeo
+            if (showAvg && ps.examAverages && ps.examAverages.length) {
+                var bioAvgVals = ps.examAverages.map(function(a) { var v = a.subjects.biology; return v != null ? Math.round(v) : null; });
+                var geoAvgVals = ps.examAverages.map(function(a) { var v = a.subjects.geography; return v != null ? Math.round(v) : null; });
+                if (bioAvgVals.some(function(v) { return v != null; })) series.push({ name: '生物均分', type: 'line', data: orderedLabels.map(function(l) { var i = db ? db.labels.indexOf(l) : -1; return i >= 0 && i < bioAvgVals.length ? bioAvgVals[i] : null; }), lineStyle: { type: 'dashed' }, symbol: 'circle', symbolSize: 4, color: '#999', label: { show: false } });
+                if (geoAvgVals.some(function(v) { return v != null; })) series.push({ name: '地理均分', type: 'line', data: orderedLabels.map(function(l) { var i = dg ? dg.labels.indexOf(l) : -1; return i >= 0 && i < geoAvgVals.length ? geoAvgVals[i] : null; }), lineStyle: { type: 'dashed' }, symbol: 'circle', symbolSize: 4, color: '#aaa', label: { show: false } });
+            }
             if (series.length) {
                 cb.style.display = 'flex';
                 ci.setOption({
                     tooltip: { trigger: 'axis', textStyle: { fontSize: fs - 2 } },
                     legend: { show: true, top: '0%', right: '8%', orient: 'horizontal', textStyle: { fontSize: fs - 4 }, itemGap: 10 },
-                    grid: { left: '12%', right: '8%', top: '18%', bottom: '28%' },
+                    grid: { left: '12%', right: '8%', top: showAvg ? '22%' : '18%', bottom: '28%' },
                     xAxis: { type: 'category', data: orderedLabels, boundaryGap: true, axisTick: { alignWithLabel: true }, axisLabel: { rotate: 35, fontSize: fs - 4, interval: 0, overflow: 'break', width: 50 } },
                     yAxis: { type: 'value', name: isRank ? '排名' : '分数', scale: true, inverse: false, minInterval: isRank ? 1 : null, nameTextStyle: { align: 'right', fontSize: fs - 2 }, axisLabel: { fontSize: fs - 2, formatter: yFmt, color: '#000' } },
-                    series: series.map(function(s) { s.lineStyle = Object.assign(s.lineStyle || {}, { width: cfg.lineWidth }); s.symbolSize = cfg.pointSize; return s; })
+                    series: series.map(function(s) { s.lineStyle = Object.assign(s.lineStyle || {}, { width: s.name.indexOf('均分') >= 0 ? 1 : cfg.lineWidth }); s.symbolSize = s.name.indexOf('均分') >= 0 ? 4 : cfg.pointSize; return s; })
                 }, true);
                 ci.resize();
             } else { cb.style.display = 'none'; ci.clear(); }
@@ -2195,19 +2272,28 @@ function updateTrendDisplay() {
                     if (!seenLE.has(l)) { seenLE.add(l); orderedLabelsE.push(l); }
                 });
             });
+            var labelFmt2 = function(p) { return p.value !== null ? (isRank && Number.isInteger(p.value) ? p.value : (typeof p.value === 'number' ? p.value.toFixed(1) : '')) : ''; };
             var seriesE = [];
             var hasListening = dels && dels.values.some(function(v) { return v !== null && v !== ''; });
-            if (de && de.values.length > 0) seriesE.push({ name: '笔试', type: 'line', data: orderedLabelsE.map(function(l) { var i = de.labels.indexOf(l); return i >= 0 ? de.values[i] : null; }), lineStyle: { type: 'solid' }, symbol: psym, color: lc });
-            if (dels && dels.values.length > 0 && hasListening) seriesE.push({ name: '听说', type: 'line', data: orderedLabelsE.map(function(l) { var i = dels.labels.indexOf(l); return i >= 0 ? dels.values[i] : null; }), lineStyle: { type: 'dashed' }, symbol: 'diamond', color: '#91cc75' });
+            if (de && de.values.length > 0) seriesE.push({ name: '笔试', type: 'line', data: orderedLabelsE.map(function(l) { var i = de.labels.indexOf(l); return i >= 0 ? de.values[i] : null; }), lineStyle: { type: 'solid' }, symbol: psym, color: lc, label: { show: cfg.showLabels, position: 'top', fontSize: fs - 4, formatter: labelFmt2 } });
+            if (dels && dels.values.length > 0 && hasListening) seriesE.push({ name: '听说', type: 'line', data: orderedLabelsE.map(function(l) { var i = dels.labels.indexOf(l); return i >= 0 ? dels.values[i] : null; }), lineStyle: { type: 'dashed' }, symbol: 'diamond', color: '#91cc75', label: { show: cfg.showLabels, position: 'top', fontSize: fs - 4, formatter: labelFmt2 } });
+            // Add grade averages for English
+            if (showAvg && ps.examAverages && ps.examAverages.length) {
+                var enAvgVals = ps.examAverages.map(function(a) { var v = a.subjects.english; return v != null ? Math.round(v) : null; });
+                var lisAvgVals = ps.examAverages.map(function(a) { var v = a.subjects.englishListening; return v != null ? Math.round(v) : null; });
+                if (enAvgVals.some(function(v) { return v != null; })) seriesE.push({ name: '笔试均分', type: 'line', data: orderedLabelsE.map(function(l) { var i = de ? de.labels.indexOf(l) : -1; return i >= 0 && i < enAvgVals.length ? enAvgVals[i] : null; }), lineStyle: { type: 'dashed' }, symbol: 'circle', symbolSize: 4, color: '#999', label: { show: false } });
+                if (lisAvgVals.some(function(v) { return v != null; })) seriesE.push({ name: '听说均分', type: 'line', data: orderedLabelsE.map(function(l) { var i = dels ? dels.labels.indexOf(l) : -1; return i >= 0 && i < lisAvgVals.length ? lisAvgVals[i] : null; }), lineStyle: { type: 'dashed' }, symbol: 'circle', symbolSize: 4, color: '#aaa', label: { show: false } });
+            }
             if (seriesE.length) {
+                var hasAvgOverlay = showAvg && ps.examAverages && ps.examAverages.length;
                 cb.style.display = 'flex';
                 ci.setOption({
                     tooltip: { trigger: 'axis', textStyle: { fontSize: fs - 2 } },
                     legend: { show: seriesE.length > 1, top: '0%', right: '8%', orient: 'horizontal', textStyle: { fontSize: fs - 4 }, itemGap: 10 },
-                    grid: { left: '12%', right: '8%', top: seriesE.length > 1 ? '18%' : '16%', bottom: '28%' },
+                    grid: { left: '12%', right: '8%', top: hasAvgOverlay ? '22%' : (seriesE.length > 1 ? '18%' : '16%'), bottom: '28%' },
                     xAxis: { type: 'category', data: orderedLabelsE, boundaryGap: true, axisTick: { alignWithLabel: true }, axisLabel: { rotate: 35, fontSize: fs - 4, interval: 0, overflow: 'break', width: 50 } },
                     yAxis: { type: 'value', name: isRank ? '排名' : '分数', scale: true, inverse: false, minInterval: isRank ? 1 : null, nameTextStyle: { align: 'right', fontSize: fs - 2 }, axisLabel: { fontSize: fs - 2, formatter: yFmt, color: '#000' } },
-                    series: seriesE.map(function(s) { s.lineStyle = Object.assign(s.lineStyle || {}, { width: cfg.lineWidth }); s.symbolSize = cfg.pointSize; return s; })
+                    series: seriesE.map(function(s) { s.lineStyle = Object.assign(s.lineStyle || {}, { width: s.name.indexOf('均分') >= 0 ? 1 : cfg.lineWidth }); s.symbolSize = s.name.indexOf('均分') >= 0 ? 4 : cfg.pointSize; return s; })
                 }, true);
                 ci.resize();
             } else { cb.style.display = 'none'; ci.clear(); }
@@ -2216,15 +2302,22 @@ function updateTrendDisplay() {
             var dataset = sds2[subj.id];
             var data = findRowData(dataset, name);
             if (data && data.values.length > 0 && data.values.some(function(v) { return v !== null; })) {
+                var subjSeries = [{ type: 'line', data: data.values, symbol: psym, symbolSize: cfg.pointSize, lineStyle: { width: cfg.lineWidth }, color: lc,
+                    label: { show: cfg.showLabels, position: 'top', fontSize: fs - 4, formatter: function(p) { return p.value !== null ? (isRank && Number.isInteger(p.value) ? p.value : (typeof p.value === 'number' ? p.value.toFixed(1) : '')) : ''; } }
+                }];
+                if (showAvg && ps.examAverages && ps.examAverages.length) {
+                    var avgVals = ps.examAverages.map(function(a) { var v = a.subjects[subj.id]; return v != null ? Math.round(v) : null; });
+                    if (avgVals.some(function(v) { return v != null; })) {
+                        subjSeries.push({ type: 'line', name: '年级均分', data: avgVals, symbol: 'circle', symbolSize: 4, lineStyle: { width: 1, type: 'dashed' }, color: '#999', label: { show: false } });
+                    }
+                }
                 cb.style.display = 'flex';
                 ci.setOption({
                     tooltip: { trigger: 'axis', textStyle: { fontSize: fs - 2 } },
-                    grid: { left: '12%', right: '8%', top: '16%', bottom: '28%' },
+                    grid: { left: '12%', right: '8%', top: showAvg ? '22%' : '16%', bottom: '28%' },
                     xAxis: { type: 'category', data: data.labels, boundaryGap: true, axisTick: { alignWithLabel: true }, axisLabel: { rotate: 35, fontSize: fs - 4, interval: 0, overflow: 'break', width: 50 } },
                     yAxis: { type: 'value', name: isRank ? '排名' : '分数', scale: true, inverse: false, minInterval: isRank ? 1 : null, nameTextStyle: { align: 'right', fontSize: fs - 2 }, axisLabel: { fontSize: fs - 2, formatter: yFmt, color: '#000' } },
-                    series: [{ type: 'line', data: data.values, symbol: psym, symbolSize: cfg.pointSize, lineStyle: { width: cfg.lineWidth }, color: lc,
-                        label: { show: cfg.showLabels, position: 'top', fontSize: fs - 4, formatter: function(p) { return p.value !== null ? (isRank && Number.isInteger(p.value) ? p.value : (typeof p.value === 'number' ? p.value.toFixed(1) : '')) : ''; } }
-                    }]
+                    series: subjSeries
                 }, true);
                 ci.resize();
             } else { cb.style.display = 'none'; ci.clear(); }
@@ -2325,7 +2418,7 @@ document.getElementById('intervalSelect').addEventListener('change', renderScore
 document.getElementById('trendDisplayMode').addEventListener('change', () => { if (DataPool.trendParsedSheets) { trendDisplayMode = document.getElementById('trendDisplayMode').value; updateTrendDisplay(); } });
 
 // Trend chart customization controls
-var trendCustomEls = ['trendFontSizeSlider','trendPointSizeSlider','trendLineWidthSlider','trendLineColorPicker','trendPointStyleSelect','trendShowLabels'];
+var trendCustomEls = ['trendFontSizeSlider','trendPointSizeSlider','trendLineWidthSlider','trendLineColorPicker','trendPointStyleSelect','trendShowLabels','trendShowGradeAvg'];
 trendCustomEls.forEach(function(id) {
     var el = document.getElementById(id);
     if (!el) return;
