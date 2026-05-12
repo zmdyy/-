@@ -135,6 +135,9 @@
             .student-name, #trendStudentName { font-size: 16px; margin-bottom: 2px; }
             .subject-ranks-container { padding: 4px; }
             .echarts-container { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            svg { shape-rendering: crispEdges; }
+            svg path, svg line, svg circle, svg rect, svg polygon, svg polyline { shape-rendering: crispEdges; vector-effect: non-scaling-stroke; }
+            svg path, svg line { stroke-linecap: butt; stroke-linejoin: miter; }
             #totalRankChartContainer { height: 160px !important; }
             #radarChartContainer { height: 160px !important; }
             .subject-chart-box, .sub-chart { height: 170px !important; }
@@ -1970,7 +1973,7 @@ function buildParsedSheetsFromAllBatches() {
 function initTrendCharts() {
     Object.values(trendEchartsInst).forEach(c => { if (c && !c.isDisposed()) c.dispose(); });
     trendEchartsInst = {};
-    var rendererOpt = { renderer: 'svg' };
+    var rendererOpt = { renderer: 'svg', ssr: false, useDirtyRect: false };
     var ids = ['totalRankChartContainer','radarChartContainer','chineseRankChart','mathRankChart','englishRankChart','physicsRankChart','historyRankChart','daofaRankChart','chemistryRankChart','bioGeoRankChart'];
     ids.forEach(function(id) {
         var el = document.getElementById(id);
@@ -2003,17 +2006,20 @@ function refreshTrendTab() {
         picker.innerHTML = '';
         var exams = DataPool.trendParsedSheets.radarAllRanks;
         var colors = ['#5470c6','#91cc75','#fac858','#ee6666','#73c0de','#3ba272','#fc8452','#9a60b4'];
+        var tlc = document.getElementById('trendLineColorPicker')?.value || '#5470c6';
         exams.forEach(function(exam, i) {
+            var isLastExam = i === exams.length - 1;
+            var dotColor = isLastExam ? tlc : colors[i % colors.length];
             var label = document.createElement('label');
             label.style.cssText = 'display:flex;align-items:center;gap:3px;cursor:pointer;padding:1px 4px;border-radius:3px;background:#f8f9fa;border:1px solid #e0e0e0;';
             var cb = document.createElement('input');
             cb.type = 'checkbox';
             cb.value = i;
-            cb.checked = (i === exams.length - 1); // default: last exam only
-            cb.dataset.color = colors[i % colors.length];
+            cb.checked = isLastExam;
+            cb.dataset.color = dotColor;
             cb.addEventListener('change', function() { updateTrendDisplay(); });
             var dot = document.createElement('span');
-            dot.style.cssText = 'display:inline-block;width:8px;height:8px;border-radius:50%;background:' + colors[i % colors.length] + ';';
+            dot.style.cssText = 'display:inline-block;width:8px;height:8px;border-radius:50%;background:' + dotColor + ';';
             label.appendChild(cb);
             label.appendChild(dot);
             label.appendChild(document.createTextNode(exam.label));
@@ -2088,7 +2094,8 @@ function updateTrendDisplay() {
 
     // Radar chart (multi-series overlay)
     var rc = trendEchartsInst['radarChartContainer'];
-    if (rc) {
+    if (rc && !rc.isDisposed()) {
+        rc.clear();
         var radarAllSource = isRank ? ps.radarAllRanks : ps.radarAllRates;
         if (!radarAllSource || !radarAllSource.length) { rc.clear(); }
         else {
@@ -2157,7 +2164,8 @@ function updateTrendDisplay() {
                     var shapes = ['circle','triangle','diamond','rect','roundRect','pin','arrow','none'];
                     var series = allValues.map(function(av) {
                         var exam = radarAllSource[av.idx];
-                        var color = colors[av.idx % colors.length];
+                        var isLast = av.idx === radarAllSource.length - 1;
+                        var color = isLast ? lc : colors[av.idx % colors.length];
                         var shape = shapes[av.idx % shapes.length];
                         return {
                             type: 'radar', name: exam.label, data: [{
@@ -2165,30 +2173,16 @@ function updateTrendDisplay() {
                                 name: exam.label
                             }],
                             symbol: shape, symbolSize: cfg.pointSize,
-                            lineStyle: { width: cfg.lineWidth, type: 'solid' },
+                            lineStyle: { width: Math.max(cfg.lineWidth, 2), type: 'solid', color: color, opacity: 1 },
                             itemStyle: { color: color },
-                            areaStyle: { opacity: 0.1 }
+                            areaStyle: { opacity: 0, shadowBlur: 0, shadowColor: 'transparent' }
                         };
                     });
-                    // Add grade average reference line for score mode (only when single exam selected)
-                    if (!isRank && ps.radarGradeAvgRates && selectedIndices.length === 1) {
-                        var gradeAvg = ps.radarGradeAvgRates[selectedIndices[0]];
-                        if (gradeAvg) {
-                            var avgVals = activeColIndices.map(function(ci) { var v = gradeAvg.row[ci + 1]; var x = parseFloat(v); return isNaN(x) ? null : x; });
-                            if (avgVals.some(function(v) { return v != null; })) {
-                                series.push({
-                                    type: 'radar', name: gradeAvg.label, data: [{ value: avgVals.map(function(v) { return v != null ? v : 0; }), name: gradeAvg.label }],
-                                    symbol: 'circle', symbolSize: Math.min(cfg.pointSize, 5),
-                                    lineStyle: { width: 1, type: 'solid' },
-                                    itemStyle: { color: '#999' },
-                                    areaStyle: { opacity: 0 }
-                                });
-                            }
-                        }
-                    }
                     rc.setOption({
+                        animation: false,
+                        progressive: 0,
                         tooltip: { trigger: 'item', textStyle: { fontSize: fs - 2 } },
-                        legend: { show: series.length > 1 || (!isRank && ps.radarGradeAvgRates && ps.radarGradeAvgRates.length > 0), orient: 'vertical', top: 0, right: 0, textStyle: { fontSize: 10 } },
+                        legend: { show: series.length > 1, orient: 'vertical', top: 0, right: 0, textStyle: { fontSize: 10 } },
                         radar: { indicator: indicators, center: ['50%','45%'], radius: '65%', startAngle: 90, splitNumber: 4, axisName: { fontSize: fs - 1, color: '#000' },
                             splitLine: { lineStyle: { color: '#ccc' } },
                             splitArea: { show: true, areaStyle: { color: ['rgba(238,197,102,0.1)','rgba(121,143,150,0.1)','rgba(165,182,218,0.1)','rgba(200,200,200,0.1)'].reverse() } },
@@ -2482,11 +2476,6 @@ document.getElementById('trendBatchPrintBtn').addEventListener('click', async fu
     const ps = DataPool.trendParsedSheets;
     if (!ps || !ps.total || !ps.total.rows.length) { alert('没有可导出的学生数据！'); return; }
     const total = ps.total.rows.length;
-    // Memory check: ~8MB per student
-    var estimatedMB = total * 8;
-    if (estimatedMB > 2048) {
-        if (!confirm('预估内存使用约' + estimatedMB + 'MB，可能超过2GB限制。建议分批导出。是否继续？')) return;
-    }
     if (!confirm('即将导出 ' + total + ' 个学生的趋势报告（每人一页）。\n导出后将弹出打印对话框，请选择「另存为PDF」。是否继续？')) return;
     const btn = document.getElementById('trendBatchPrintBtn');
     const origText = btn.textContent;
@@ -2495,26 +2484,30 @@ document.getElementById('trendBatchPrintBtn').addEventListener('click', async fu
     const mainTab = document.getElementById('tab-trend');
     const wrap = document.getElementById('trendReportContent');
     try {
-        const printContainer = document.createElement('div');
+        var printContainer = document.createElement('div');
         printContainer.id = 'trend-batch-print';
         printContainer.style.cssText = 'position:absolute;left:-9999px;top:0;width:210mm;background:#fff;padding:0;';
         document.body.appendChild(printContainer);
-        for (let i = 0; i < total; i++) {
-            const sName = ps.total.rows[i][0]; if (!sName) continue;
+        for (var i = 0; i < total; i++) {
+            var sName = ps.total.rows[i][0]; if (!sName) continue;
             btn.textContent = '准备 ' + (i+1) + '/' + total + ': ' + sName;
             trendRowIdx = i; updateTrendDisplay();
             await new Promise(function(r) { setTimeout(r, 1500); });
             var clone = wrap.cloneNode(true);
             clone.style.cssText = 'width:210mm;height:297mm;padding:10mm;box-sizing:border-box;background:#fff;page-break-after:always;overflow:hidden;';
             printContainer.appendChild(clone);
-            if ((i+1) % 3 === 0) { if (window.gc) window.gc(); await new Promise(function(r) { setTimeout(r, 100); }); }
+            // 每处理3个学生进行一次内存清理
+            if ((i + 1) % 3 === 0) {
+                if (window.gc) window.gc();
+                await new Promise(function(r) { setTimeout(r, 100); });
+            }
         }
         btn.textContent = '正在启动打印...';
         mainTab.style.cssText += ';background:#fff;';
         if (wrap) wrap.style.display = 'none';
         printContainer.style.position = 'static'; printContainer.style.left = '0';
         document.title = '学生成绩趋势报告_' + new Date().toISOString().slice(0,10) + '_' + total + '人';
-        await new Promise(r => setTimeout(r, 400));
+        await new Promise(r => setTimeout(r, 500));
         window.print();
         await new Promise(r => setTimeout(r, 1500));
         if (wrap) wrap.style.display = '';
