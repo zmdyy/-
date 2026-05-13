@@ -135,9 +135,6 @@
             .student-name, #trendStudentName { font-size: 16px; margin-bottom: 2px; }
             .subject-ranks-container { padding: 4px; }
             .echarts-container { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            svg { shape-rendering: crispEdges; }
-            svg path, svg line, svg circle, svg rect, svg polygon, svg polyline { shape-rendering: crispEdges; vector-effect: non-scaling-stroke; }
-            svg path, svg line { stroke-linecap: butt; stroke-linejoin: miter; }
             #totalRankChartContainer { height: 160px !important; }
             #radarChartContainer { height: 160px !important; }
             .subject-chart-box, .sub-chart { height: 170px !important; }
@@ -557,10 +554,30 @@ const DataPool = {
     deleteBatch(id) {
         const idx = this.batches.findIndex(b => b.id === id);
         if (idx >= 0) { this.batches.splice(idx, 1); this.currentBatchId = this.batches.length ? this.batches[this.batches.length - 1].id : null; }
+    },
+    syncFromGlobalsIfEditing() {
+        if (!this.currentBatchId) return;
+        const b = this.batches.find(x => x.id === this.currentBatchId);
+        if (!b) return;
+        b.combinedStudentData = deepClone(combinedStudentData);
+        b.allSubjectHeaders = deepClone(allSubjectHeaders);
+        b.uploadedFilesData = deepClone(uploadedFilesData);
+        b.uploadedPdfs = deepClone(uploadedPdfs);
+        persistBatches();
+        refreshBatchList();
+        updateBatchInfoBars();
     }
 };
 
 function deepClone(obj) { return JSON.parse(JSON.stringify(obj)); }
+
+// #region agent log
+function __batchDbg(hypothesisId, message, data) {
+    try {
+        fetch('http://127.0.0.1:7351/ingest/0ba6bf56-8e61-403b-b71c-b8c804d72a79', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'ba6595' }, body: JSON.stringify({ sessionId: 'ba6595', location: '统合版(1).html', message: message, hypothesisId: hypothesisId, data: data || {}, timestamp: Date.now(), runId: (typeof window !== 'undefined' && window.__batchRunId) ? window.__batchRunId : 'batch-v1' }) }).catch(function () {});
+    } catch (e) {}
+}
+// #endregion
 
 function persistBatches() {
     var compact = DataPool.batches.map(function(b) {
@@ -682,7 +699,7 @@ function switchTab(tabId) {
 function updateBatchInfoBars() {
     const batch = DataPool.getCurrentBatch();
     const label = batch ? batch.label : (combinedStudentData.length ? '未保存批次' : '无数据');
-    const count = batch ? batch.combinedStudentData.length : (combinedStudentData.length || 0);
+    const count = combinedStudentData.length || 0;
     const countStr = count ? `（${count} 名学生）` : '';
     var ids = ['batchLabelPersonal','batchLabelCollective','batchLabelTrend','batchLabelComprehensive','batchCountPersonal','batchCountCollective','batchCountTrend','batchCountComprehensive'];
     ids.forEach(id => { const el = document.getElementById(id); if (el && id.startsWith('batchLabel')) el.textContent = label; else if (el) el.textContent = countStr; });
@@ -969,6 +986,11 @@ function combineAllStudentData() {
     updateStudentNameList(combinedStudentData);
     applyFallbackGradeRanks(combinedStudentData, allSubjectHeaders);
     calculateFallbackRanks(combinedStudentData, allSubjectHeaders);
+    DataPool.syncFromGlobalsIfEditing();
+    // #region agent log
+    var _b = DataPool.getCurrentBatch();
+    __batchDbg('H2', 'postCombine', { currentBatchId: DataPool.currentBatchId, combinedN: combinedStudentData.length, batchSnapN: _b && _b.combinedStudentData ? _b.combinedStudentData.length : -1, fileEntries: Object.keys(uploadedFilesData).length });
+    // #endregion
 }
 
 function updateStudentNameList(data) {
@@ -1295,16 +1317,35 @@ function extractStudentAnalysisData(studentName, weakRateThOpt) {
         };
         const stripMd = function(t) { return String(t||'').trim().replace(/^(\*\*)+|(\*\*)+$/g,''); };
         const normL = function(line) { return String(line||'').replace(/\s+/g,''); };
-        const findCompositeHitLine = function(lines, cq, itemRaw) {
+        var getPdfMarkdownBodyStartLine = function(lines) {
+            var dash = 0;
+            for (var bi = 0; bi < Math.min(lines.length || 0, 40); bi++) {
+                if (String(lines[bi] || '').trim() === '---') {
+                    dash++;
+                    if (dash >= 2) {
+                        var s = bi + 1;
+                        while (s < lines.length && !String(lines[s] || '').trim()) s++;
+                        if (/^#\s*试卷文本\s*$/.test(String(lines[s] || '').trim())) {
+                            s++;
+                            while (s < lines.length && !String(lines[s] || '').trim()) s++;
+                        }
+                        return Math.min(s, lines.length);
+                    }
+                }
+            }
+            return 0;
+        };
+        const findCompositeHitLine = function(lines, cq, itemRaw, minI) {
+            minI = (typeof minI === 'number' && minI > 0) ? minI : 0;
             var major = cq.major, minor = cq.minor;
             var majorIdx = -1;
             var reMajorLine = new RegExp('^'+major+'\\s*[\\.、．]|^第\\s*'+major+'\\s*题');
             var reMajorWithSub = new RegExp('^'+major+'\\s*[\\.、．].*[（(]\\s*'+minor+'\\s*[）)]');
-            for (var i=0;i<lines.length;i++){var t=stripMd(lines[i]);if(reMajorLine.test(t)&&new RegExp('[（(]\\s*'+minor+'\\s*[）)]').test(t))return i;if(reMajorWithSub.test(t))return i;if(reMajorLine.test(t)){majorIdx=i;break;}}
+            for (var i=minI;i<lines.length;i++){var t=stripMd(lines[i]);if(reMajorLine.test(t)&&new RegExp('[（(]\\s*'+minor+'\\s*[）)]').test(t))return i;if(reMajorWithSub.test(t))return i;if(reMajorLine.test(t)){majorIdx=i;break;}}
             var tryFused = function(i0,i1){for(var i=i0;i<i1;i++){var L=lines[i];if(!L)continue;if(L.indexOf(major+'（'+minor+'）')>=0||L.indexOf(major+'('+minor+')')>=0)return i;var nl=normL(L);if(nl.indexOf(major+'（'+minor+'）')>=0||nl.indexOf(major+'('+minor+')')>=0)return i;}return -1;};
             if(majorIdx>=0){var win1=Math.min(lines.length,majorIdx+160);var subRe=new RegExp('^[（(]\\s*'+minor+'\\s*[）)]\\s*\\S');for(var i=majorIdx;i<win1;i++){var t=stripMd(lines[i]);if(subRe.test(t))return i;}var fi=tryFused(majorIdx,win1);if(fi>=0)return fi;}
-            var fg=tryFused(0,lines.length);if(fg>=0)return fg;
-            if(itemRaw&&String(itemRaw).trim().length>=2){var it=String(itemRaw).trim();var i0=majorIdx>=0?majorIdx:0;var i1=majorIdx>=0?Math.min(lines.length,majorIdx+160):lines.length;for(var i=i0;i<i1;i++){var L=lines[i];if(L&&(L.indexOf(it)>=0||normL(L).indexOf(normL(it))>=0))return i;}}
+            var fg=tryFused(minI,lines.length);if(fg>=0)return fg;
+            if(itemRaw&&String(itemRaw).trim().length>=2){var it=String(itemRaw).trim();var i0=majorIdx>=0?majorIdx:minI;var i1=majorIdx>=0?Math.min(lines.length,majorIdx+160):lines.length;for(var i=i0;i<i1;i++){var L=lines[i];if(L&&(L.indexOf(it)>=0||normL(L).indexOf(normL(it))>=0))return i;}}
             return -1;
         };
         var isChoiceQuestion = function(itemKey,studentAnswer,correctAnswer){
@@ -1317,6 +1358,11 @@ function extractStudentAnalysisData(studentName, weakRateThOpt) {
         };
         var isQuestionStartLine = function(line){
             if(!line||!String(line).trim())return false;
+            var c=normL(stripMd(line));
+            if(/^第\d{1,3}题/.test(c))return true;
+            if(/^\d{1,3}[\.、．、]\S/.test(c))return true;
+            if(/^[（(]\d{1,3}[）)]\S/.test(c))return true;
+            if(/^\d{1,3}[、,，]\S/.test(c))return true;
             var t=String(line).trim();
             if(/^第\s*\d{1,3}\s*题/.test(t))return true;
             if(/^\d{1,3}\s*[\.\、．]\s*\S/.test(t))return true;
@@ -1334,20 +1380,20 @@ function extractStudentAnalysisData(studentName, weakRateThOpt) {
             var multiNums=(function(){var t=String(itemKey||'').trim();if(!t||!/第/.test(t)||!/[、,，]/.test(t))return[];if(/[（(].*[、,，].*[）)]/.test(t))return[];var nums=(t.match(/\d{1,2}/g)||[]).map(function(x){return String(parseInt(x,10));});return Array.from(new Set(nums)).filter(Boolean);})();
             var cq=parseCompositeQuestionRef(itemKey||'');
             var start=hitIdx;var foundStart=false;
-            if(multiNums.length>=2){var makeReQ=function(num){return new RegExp('^第\\s*'+num+'\\s*题|^'+num+'\\s*[\\.、．]');};var firstIdx=-1,lastIdx=-1;for(var i=0;i<n;i++){var t2=stripMd(lines[i]);if(!t2)continue;if(firstIdx<0&&makeReQ(multiNums[0]).test(t2))firstIdx=i;if(makeReQ(multiNums[multiNums.length-1]).test(t2))lastIdx=i;}if(firstIdx>=0){start=firstIdx;foundStart=true;}if(lastIdx>=0){var mergedEnd=n-1;for(var i=lastIdx+1;i<n;i++){if(isQuestionStartLine(lines[i])||isMdSectionHeader(lines[i])){mergedEnd=i-1;break;}}while(mergedEnd>start&&!String(lines[mergedEnd]||'').trim())mergedEnd--;return {start:start,end:Math.max(start,mergedEnd)};}}
-            if(cq){for(var i=hitIdx;i>=0;i--){var t=stripMd(lines[i]);if(new RegExp('^'+cq.major+'\\s*[\\.、．]|^第\\s*'+cq.major+'\\s*题').test(t)){start=i;foundStart=true;break;}}}
+            if(multiNums.length>=2){var makeReQC=function(num){return new RegExp('^第'+num+'题|^'+num+'[\\.、．、]');};var firstIdx=-1,lastIdx=-1;for(var i=0;i<n;i++){var t2c=normL(stripMd(lines[i]));if(!t2c)continue;if(firstIdx<0&&makeReQC(multiNums[0]).test(t2c))firstIdx=i;if(makeReQC(multiNums[multiNums.length-1]).test(t2c))lastIdx=i;}if(firstIdx>=0){start=firstIdx;foundStart=true;}if(lastIdx>=0){var mergedEnd=n-1;for(var i=lastIdx+1;i<n;i++){if(isQuestionStartLine(lines[i])||isMdSectionHeader(lines[i])){mergedEnd=i-1;break;}}while(mergedEnd>start&&!String(lines[mergedEnd]||'').trim())mergedEnd--;return {start:start,end:Math.max(start,mergedEnd)};}}
+            if(cq){var reCQ=new RegExp('^'+cq.major+'[\\.、．、]|^第'+cq.major+'题');var tHit=normL(stripMd(lines[hitIdx]));if(reCQ.test(tHit)){start=hitIdx;foundStart=true;}else{for(var i=hitIdx-1;i>=0;i--){var tcq=normL(stripMd(lines[i]));if(reCQ.test(tcq)){start=i;foundStart=true;break;}}}}
             if(!foundStart){for(var i=hitIdx;i>=0;i--){if(isQuestionStartLine(lines[i])){start=i;foundStart=true;break;}if(isMdSectionHeader(lines[i])){for(var j=i+1;j<=hitIdx;j++){if(isQuestionStartLine(lines[j])){start=j;foundStart=true;break;}}if(!foundStart)start=Math.min(i+1,hitIdx);break;}}}
             if(!foundStart)start=Math.max(0,hitIdx-45);
             var end=n-1;var seenRequestedMinors=new Set();
             for(var i=hitIdx+1;i<n;i++){var Li=lines[i];
-                if(cq){var ti=stripMd(Li);
+                if(cq){var ti=stripMd(Li);var tic=normL(ti);
                     if(cqList&&cqList.minors.length>0){var inlineMarkers=Array.from(ti.matchAll(/[（(]\s*(\d{1,2})\s*[）)]/g)).map(function(m){return parseInt(m[1],10);}).filter(function(v){return !isNaN(v)&&v>0;});inlineMarkers.forEach(function(v){if(cqList.minors.indexOf(v)>=0)seenRequestedMinors.add(v);});if(inlineMarkers.some(function(v){return cqList.minors.indexOf(v)<0;})&&(inlineMarkers.some(function(v){return cqList.minors.indexOf(v)>=0;})||seenRequestedMinors.size>0)){end=i-1;break;}}
                     if(cqList){var mm=getMinorMarker(ti,cqList.major);if(mm&&!isNaN(mm.minor)){if(cqList.minors.indexOf(mm.minor)<0&&mm.minor>0){end=i-1;break;}}}
                     var sib=ti.match(/^[（(]\s*(\d{1,2})\s*[）)]\s*\S/);if(sib&&+sib[1]>0){if(cqList&&cqList.minors.length>0){if(cqList.minors.indexOf(+sib[1])<0){end=i-1;break;}}else if(+sib[1]!==cq.minor){end=i-1;break;}}
-                    if(cqList){var tiNoSpace=ti.replace(/\s+/g,'');if(new RegExp('^'+(cqList.major+1)+'\\s*[\\.、．]|^第\\s*'+(cqList.major+1)+'\\s*题').test(ti)){end=i-1;break;}var sameMajorSub=tiNoSpace.match(new RegExp('^'+cqList.major+'[（(](\\d{1,2})[）)]'));if(sameMajorSub){var sibNum=parseInt(sameMajorSub[1],10);if(!isNaN(sibNum)&&cqList.minors.indexOf(sibNum)<0){end=i-1;break;}}}
+                    if(cqList){var tiNoSpace=tic;if(new RegExp('^'+(cqList.major+1)+'[\\.、．、]|^第'+(cqList.major+1)+'题').test(tiNoSpace)){end=i-1;break;}var sameMajorSub=tiNoSpace.match(new RegExp('^'+cqList.major+'[（(](\\d{1,2})[）)]'));if(sameMajorSub){var sibNum=parseInt(sameMajorSub[1],10);if(!isNaN(sibNum)&&cqList.minors.indexOf(sibNum)<0){end=i-1;break;}}}
                     else if(sib&&+sib[1]!==cq.minor&&+sib[1]>0){end=i-1;break;}
                     if(cqList){var plain=ti.match(/^(\d{1,2})\s*[\\.、．]\s*\S/);if(plain){var pNum=parseInt(plain[1],10);if(!isNaN(pNum)&&cqList.minors.indexOf(pNum)<0&&pNum>0){end=i-1;break;}}}
-                    if(new RegExp('^'+(cq.major+1)+'\\s*[\\.、．]|^第\\s*'+(cq.major+1)+'\\s*题').test(ti)){end=i-1;break;}
+                    if(new RegExp('^'+(cq.major+1)+'[\\.、．、]|^第'+(cq.major+1)+'题').test(tic)){end=i-1;break;}
                 }
                 if(isQuestionStartLine(Li)){end=i-1;break;}
                 if(isMdSectionHeader(Li)){if(allowCrossPageForSubQuestion){var j=i+1;while(j<n&&(!String(lines[j]||'').trim()||isMdSectionHeader(lines[j])))j++;if(j<n&&!isQuestionStartLine(lines[j]))continue;}end=i-1;break;}
@@ -1375,20 +1421,29 @@ function extractStudentAnalysisData(studentName, weakRateThOpt) {
             var cq=parseCompositeQuestionRef(String(item||'').trim());if(cq)return [String(cq.major),String(cq.minor)];
             var g=String(item||'').match(/\d{1,2}/g);if(!g||!g.length)return[];return Array.from(new Set(g));
         };
+        var isLikelyExamMetaLine = function(line) {
+            var t = String(line || '').replace(/\s+/g, '');
+            return /考试形式|开卷|注意事项|答题卡|条形码|本试卷共|准考证|不得携带|不得相互|粘贴好条形|考试用时|将姓名|黑白字迹|交回/.test(t);
+        };
         var findHitLine = function(lines,q){
             var item=String(q.item||'').trim(),sub=String(q.subjectName||'').trim();
-            var composite=parseCompositeQuestionRef(item);if(composite){var hi=findCompositeHitLine(lines,composite,item);if(hi>=0)return hi;}
+            var bodyStart=getPdfMarkdownBodyStartLine(lines);
+            var composite=parseCompositeQuestionRef(item);if(composite){var hi=findCompositeHitLine(lines,composite,item,bodyStart);if(hi>=0)return hi;}
             var variants=buildKeywordVariants(item,sub);
             var normL2=function(line){return String(line||'').replace(/\s+/g,'');};
             var normKw=function(kw){return String(kw||'').replace(/\s+/g,'');};
             for(var vi=0;vi<variants.length;vi++){var kw=variants[vi];if(kw.length<2&&variants.length>1)continue;var nk=normKw(kw);if(nk.length<2&&variants.length>1)continue;
-                for(var i=0;i<lines.length;i++){var line=lines[i];if(!line)continue;if(line.indexOf(kw)>=0)return i;if(nk.length>=2&&normL2(line).indexOf(nk)>=0)return i;}}
+                for(var i=bodyStart;i<lines.length;i++){var line=lines[i];if(!line)continue;if(line.indexOf(kw)>=0)return i;if(nk.length>=2&&normL2(line).indexOf(nk)>=0)return i;}}
             var nums=extractQuestionNums(item);
-            if(/、/.test(item)||/,/.test(item)){var esc=nums.map(function(n){return String(n).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');});var seqP=esc.join('\\s*[、,，]\\s*');var reM=new RegExp('第?\\s*'+seqP+'\\s*题?');for(var i=0;i<lines.length;i++){var t3=String(lines[i]||'').trim().replace(/^(\*\*)+|(\*\*)+$/g,'');if(!t3)continue;if(reM.test(t3))return i;}}
-            for(var ni=0;ni<nums.length;ni++){var num=nums[ni];var reDi=new RegExp('^第\\s*'+num+'\\s*题');var reParen=new RegExp('^[（(]\\s*'+num+'\\s*[）)]\\s*[\\.、．]?');var reHead=new RegExp('^(?:\\*\\s*)+'+num+'\\s*[\\.、．]');var rePlain=new RegExp('^'+num+'\\s*[\\.、．]');for(var i=0;i<lines.length;i++){var line=lines[i];if(!line)continue;var t4=String(line).trim().replace(/^(\*\*)+|(\*\*)+$/g,'');if(reDi.test(t4)||reParen.test(t4)||reHead.test(t4)||rePlain.test(t4))return i;}}
+            var cqNum=parseCompositeQuestionRef(item);
+            if(cqNum&&cqNum.major>=10&&cqNum.minor<=9){nums=nums.filter(function(n){return n!==String(cqNum.minor);});}
+            if(/、/.test(item)||/,/.test(item)){var esc=nums.map(function(n){return String(n).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');});var seqP=esc.join('\\s*[、,，]\\s*');var reM=new RegExp('第?\\s*'+seqP+'\\s*题?');for(var i=bodyStart;i<lines.length;i++){var t3=String(lines[i]||'').trim().replace(/^(\*\*)+|(\*\*)+$/g,'');if(!t3)continue;if(reM.test(t3)&&!isLikelyExamMetaLine(lines[i]))return i;}}
+            for(var ni=0;ni<nums.length;ni++){var num=nums[ni];var reDi=new RegExp('^第\\s*'+num+'\\s*题');var reParen=new RegExp('^[（(]\\s*'+num+'\\s*[）)]\\s*[\\.、．]?');var reHead=new RegExp('^(?:\\*\\s*)+'+num+'\\s*[\\.、．]');var rePlain=new RegExp('^'+num+'\\s*[\\.、．]');var reDiC=new RegExp('^第'+num+'题');var reParenC=new RegExp('^[（(]'+num+'[）)]\\s*[\\.、．]?');var rePlainC=new RegExp('^'+num+'[\\.、．、]');for(var i=bodyStart;i<lines.length;i++){var line=lines[i];if(!line)continue;var t4=String(stripMd(line));var t4c=normL2(t4);if(!(reDi.test(t4)||reParen.test(t4)||reHead.test(t4)||rePlain.test(t4)||reDiC.test(t4c)||reParenC.test(t4c)||rePlainC.test(t4c)||reHead.test(t4c)))continue;if(isLikelyExamMetaLine(line))continue;return i;}}
+            var choiceTag=String(item||'').trim().match(/^(单选|多选|客观(?:题)?|选择题|单项选择|多项选择)(\d{1,3})$/);
+            if(choiceTag){var cqn=choiceTag[2];var reCC1=new RegExp('^第'+cqn+'题');var reCC2=new RegExp('^'+cqn+'[\\.、．、]');var reCC3=new RegExp('^[（(]'+cqn+'[）)]');for(var ic=bodyStart;ic<lines.length;ic++){var Lc=lines[ic];if(!Lc||isLikelyExamMetaLine(Lc))continue;var cc=normL2(stripMd(Lc));if(reCC1.test(cc)||reCC2.test(cc)||reCC3.test(cc))return ic;}}
             var numHints=[];nums.forEach(function(num2){numHints.push('第'+num2+'题','第 '+num2+' 题','('+num2+')','（'+num2+'）',num2+'、');});
-            for(var hi2=0;hi2<numHints.length;hi2++){var hint=numHints[hi2];var nh=normKw(hint);if(nh.length<2)continue;for(var i=0;i<lines.length;i++){var line=lines[i];if(!line)continue;if(!isQuestionStartLine(line))continue;if(line.indexOf(hint)>=0||normL2(line).indexOf(nh)>=0)return i;}}
-            for(var hi3=0;hi3<numHints.length;hi3++){var hint=numHints[hi3];var nh=normKw(hint);if(nh.length<2)continue;for(var i=0;i<lines.length;i++){var line=lines[i];if(!line)continue;if(line.indexOf(hint)>=0||normL2(line).indexOf(nh)>=0)return i;}}
+            for(var hi2=0;hi2<numHints.length;hi2++){var hint=numHints[hi2];var nh=normKw(hint);if(nh.length<2)continue;for(var i=bodyStart;i<lines.length;i++){var line=lines[i];if(!line)continue;if(!isQuestionStartLine(line))continue;if(isLikelyExamMetaLine(line))continue;if(line.indexOf(hint)>=0||normL2(line).indexOf(nh)>=0)return i;}}
+            for(var hi3=0;hi3<numHints.length;hi3++){var hint=numHints[hi3];var nh=normKw(hint);if(nh.length<2)continue;for(var i=bodyStart;i<lines.length;i++){var line=lines[i];if(!line)continue;if(isLikelyExamMetaLine(line))continue;var cc3=normL2(stripMd(line));var pos=cc3.indexOf(nh);if(pos<0)continue;if(!isQuestionStartLine(line)&&pos!==0)continue;return i;}}
             return -1;
         };
         var weakRefsForPdf = function(queries,fileName){
@@ -1973,7 +2028,7 @@ function buildParsedSheetsFromAllBatches() {
 function initTrendCharts() {
     Object.values(trendEchartsInst).forEach(c => { if (c && !c.isDisposed()) c.dispose(); });
     trendEchartsInst = {};
-    var rendererOpt = { renderer: 'svg', ssr: false, useDirtyRect: false };
+    var rendererOpt = { renderer: 'svg' };
     var ids = ['totalRankChartContainer','radarChartContainer','chineseRankChart','mathRankChart','englishRankChart','physicsRankChart','historyRankChart','daofaRankChart','chemistryRankChart','bioGeoRankChart'];
     ids.forEach(function(id) {
         var el = document.getElementById(id);
@@ -2006,20 +2061,17 @@ function refreshTrendTab() {
         picker.innerHTML = '';
         var exams = DataPool.trendParsedSheets.radarAllRanks;
         var colors = ['#5470c6','#91cc75','#fac858','#ee6666','#73c0de','#3ba272','#fc8452','#9a60b4'];
-        var tlc = document.getElementById('trendLineColorPicker')?.value || '#5470c6';
         exams.forEach(function(exam, i) {
-            var isLastExam = i === exams.length - 1;
-            var dotColor = isLastExam ? tlc : colors[i % colors.length];
             var label = document.createElement('label');
             label.style.cssText = 'display:flex;align-items:center;gap:3px;cursor:pointer;padding:1px 4px;border-radius:3px;background:#f8f9fa;border:1px solid #e0e0e0;';
             var cb = document.createElement('input');
             cb.type = 'checkbox';
             cb.value = i;
-            cb.checked = isLastExam;
-            cb.dataset.color = dotColor;
+            cb.checked = (i === exams.length - 1); // default: last exam only
+            cb.dataset.color = colors[i % colors.length];
             cb.addEventListener('change', function() { updateTrendDisplay(); });
             var dot = document.createElement('span');
-            dot.style.cssText = 'display:inline-block;width:8px;height:8px;border-radius:50%;background:' + dotColor + ';';
+            dot.style.cssText = 'display:inline-block;width:8px;height:8px;border-radius:50%;background:' + colors[i % colors.length] + ';';
             label.appendChild(cb);
             label.appendChild(dot);
             label.appendChild(document.createTextNode(exam.label));
@@ -2094,8 +2146,7 @@ function updateTrendDisplay() {
 
     // Radar chart (multi-series overlay)
     var rc = trendEchartsInst['radarChartContainer'];
-    if (rc && !rc.isDisposed()) {
-        rc.clear();
+    if (rc) {
         var radarAllSource = isRank ? ps.radarAllRanks : ps.radarAllRates;
         if (!radarAllSource || !radarAllSource.length) { rc.clear(); }
         else {
@@ -2164,8 +2215,7 @@ function updateTrendDisplay() {
                     var shapes = ['circle','triangle','diamond','rect','roundRect','pin','arrow','none'];
                     var series = allValues.map(function(av) {
                         var exam = radarAllSource[av.idx];
-                        var isLast = av.idx === radarAllSource.length - 1;
-                        var color = isLast ? lc : colors[av.idx % colors.length];
+                        var color = colors[av.idx % colors.length];
                         var shape = shapes[av.idx % shapes.length];
                         return {
                             type: 'radar', name: exam.label, data: [{
@@ -2173,16 +2223,30 @@ function updateTrendDisplay() {
                                 name: exam.label
                             }],
                             symbol: shape, symbolSize: cfg.pointSize,
-                            lineStyle: { width: Math.max(cfg.lineWidth, 2), type: 'solid', color: color, opacity: 1 },
+                            lineStyle: { width: cfg.lineWidth, type: 'solid' },
                             itemStyle: { color: color },
-                            areaStyle: { opacity: 0, shadowBlur: 0, shadowColor: 'transparent' }
+                            areaStyle: { opacity: 0.1 }
                         };
                     });
+                    // Add grade average reference line for score mode (only when single exam selected)
+                    if (!isRank && ps.radarGradeAvgRates && selectedIndices.length === 1) {
+                        var gradeAvg = ps.radarGradeAvgRates[selectedIndices[0]];
+                        if (gradeAvg) {
+                            var avgVals = activeColIndices.map(function(ci) { var v = gradeAvg.row[ci + 1]; var x = parseFloat(v); return isNaN(x) ? null : x; });
+                            if (avgVals.some(function(v) { return v != null; })) {
+                                series.push({
+                                    type: 'radar', name: gradeAvg.label, data: [{ value: avgVals.map(function(v) { return v != null ? v : 0; }), name: gradeAvg.label }],
+                                    symbol: 'circle', symbolSize: Math.min(cfg.pointSize, 5),
+                                    lineStyle: { width: 1, type: 'solid' },
+                                    itemStyle: { color: '#999' },
+                                    areaStyle: { opacity: 0 }
+                                });
+                            }
+                        }
+                    }
                     rc.setOption({
-                        animation: false,
-                        progressive: 0,
                         tooltip: { trigger: 'item', textStyle: { fontSize: fs - 2 } },
-                        legend: { show: series.length > 1, orient: 'vertical', top: 0, right: 0, textStyle: { fontSize: 10 } },
+                        legend: { show: series.length > 1 || (!isRank && ps.radarGradeAvgRates && ps.radarGradeAvgRates.length > 0), orient: 'vertical', top: 0, right: 0, textStyle: { fontSize: 10 } },
                         radar: { indicator: indicators, center: ['50%','45%'], radius: '65%', startAngle: 90, splitNumber: 4, axisName: { fontSize: fs - 1, color: '#000' },
                             splitLine: { lineStyle: { color: '#ccc' } },
                             splitArea: { show: true, areaStyle: { color: ['rgba(238,197,102,0.1)','rgba(121,143,150,0.1)','rgba(165,182,218,0.1)','rgba(200,200,200,0.1)'].reverse() } },
@@ -2352,6 +2416,7 @@ document.getElementById('pdfFileInput').addEventListener('change', async functio
         try { entry.markdown = await parsePdfToMarkdown(f); entry.status = 'ready'; } catch(err) { entry.status = 'error'; entry.errorMsg = String(err.message || err); }
         renderPdfList();
     }
+    DataPool.syncFromGlobalsIfEditing();
     this.value = null;
 });
 
@@ -2476,6 +2541,11 @@ document.getElementById('trendBatchPrintBtn').addEventListener('click', async fu
     const ps = DataPool.trendParsedSheets;
     if (!ps || !ps.total || !ps.total.rows.length) { alert('没有可导出的学生数据！'); return; }
     const total = ps.total.rows.length;
+    // Memory check: ~8MB per student
+    var estimatedMB = total * 8;
+    if (estimatedMB > 2048) {
+        if (!confirm('预估内存使用约' + estimatedMB + 'MB，可能超过2GB限制。建议分批导出。是否继续？')) return;
+    }
     if (!confirm('即将导出 ' + total + ' 个学生的趋势报告（每人一页）。\n导出后将弹出打印对话框，请选择「另存为PDF」。是否继续？')) return;
     const btn = document.getElementById('trendBatchPrintBtn');
     const origText = btn.textContent;
@@ -2484,30 +2554,26 @@ document.getElementById('trendBatchPrintBtn').addEventListener('click', async fu
     const mainTab = document.getElementById('tab-trend');
     const wrap = document.getElementById('trendReportContent');
     try {
-        var printContainer = document.createElement('div');
+        const printContainer = document.createElement('div');
         printContainer.id = 'trend-batch-print';
         printContainer.style.cssText = 'position:absolute;left:-9999px;top:0;width:210mm;background:#fff;padding:0;';
         document.body.appendChild(printContainer);
-        for (var i = 0; i < total; i++) {
-            var sName = ps.total.rows[i][0]; if (!sName) continue;
+        for (let i = 0; i < total; i++) {
+            const sName = ps.total.rows[i][0]; if (!sName) continue;
             btn.textContent = '准备 ' + (i+1) + '/' + total + ': ' + sName;
             trendRowIdx = i; updateTrendDisplay();
             await new Promise(function(r) { setTimeout(r, 1500); });
             var clone = wrap.cloneNode(true);
             clone.style.cssText = 'width:210mm;height:297mm;padding:10mm;box-sizing:border-box;background:#fff;page-break-after:always;overflow:hidden;';
             printContainer.appendChild(clone);
-            // 每处理3个学生进行一次内存清理
-            if ((i + 1) % 3 === 0) {
-                if (window.gc) window.gc();
-                await new Promise(function(r) { setTimeout(r, 100); });
-            }
+            if ((i+1) % 3 === 0) { if (window.gc) window.gc(); await new Promise(function(r) { setTimeout(r, 100); }); }
         }
         btn.textContent = '正在启动打印...';
         mainTab.style.cssText += ';background:#fff;';
         if (wrap) wrap.style.display = 'none';
         printContainer.style.position = 'static'; printContainer.style.left = '0';
         document.title = '学生成绩趋势报告_' + new Date().toISOString().slice(0,10) + '_' + total + '人';
-        await new Promise(r => setTimeout(r, 500));
+        await new Promise(r => setTimeout(r, 400));
         window.print();
         await new Promise(r => setTimeout(r, 1500));
         if (wrap) wrap.style.display = '';
@@ -4114,6 +4180,15 @@ document.getElementById('batchStatus').textContent = '⏳ 正在恢复上次数�
 setTimeout(function() {
     restoreBatches();
     refreshBatchList();
+    // #region agent log
+    __batchDbg('H1', 'postRestoreBeforeLoad', { currentBatchId: DataPool.currentBatchId, combinedN: combinedStudentData.length, fileEntries: Object.keys(uploadedFilesData).length });
+    // #endregion
+    if (DataPool.currentBatchId) {
+        loadBatch(DataPool.currentBatchId);
+        // #region agent log
+        __batchDbg('H1', 'postRestoreAfterLoadBatch', { currentBatchId: DataPool.currentBatchId, combinedN: combinedStudentData.length, fileEntries: Object.keys(uploadedFilesData).length });
+        // #endregion
+    }
 }, 60);
 </script>
 </body>
