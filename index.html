@@ -158,8 +158,9 @@
 
     <div class="tab-nav">
         <button class="active" data-tab="tab-upload">上传管理</button>
-        <button data-tab="tab-personal">个人分析</button>
+        <button data-tab="tab-class-diff">各班情况</button>
         <button data-tab="tab-collective">集体分析</button>
+        <button data-tab="tab-personal">个人分析</button>
         <button data-tab="tab-trend">趋势分析</button>
         <button data-tab="tab-comprehensive">综合诊断</button>
     </div>
@@ -196,9 +197,9 @@
             <ul class="file-list" id="subFileList"></ul>
         </div>
         <div class="upload-section pdf">
-            <h3>PDF分区 — 试卷文档 (可选)</h3>
-            <button class="upload-btn" onclick="document.getElementById('pdfFileInput').click()" style="background:#9b59b6;">选择PDF试卷</button>
-            <input type="file" id="pdfFileInput" class="file-input" accept=".pdf" multiple>
+            <h3>PDF/Markdown分区 — 试卷文档 (可选)</h3>
+            <button class="upload-btn" onclick="document.getElementById('pdfFileInput').click()" style="background:#9b59b6;">选择PDF/MD试卷</button>
+            <input type="file" id="pdfFileInput" class="file-input" accept=".pdf,.md" multiple>
             <div id="pdfStatusText" style="font-size:12px;margin-top:5px;color:#888;">未上传PDF</div>
             <ul class="file-list" id="pdfFileList"></ul>
         </div>
@@ -232,47 +233,71 @@
     </div>
 </div>
 
-<!-- ===== 个人分析 ===== -->
-<div id="tab-personal" class="tab-panel">
-    <div class="batch-info-bar" id="batchInfoPersonal">
-        <span class="batch-icon">📦</span>
-        <span>当前批次：<span class="batch-label" id="batchLabelPersonal">未加载</span></span>
-        <span class="batch-count" id="batchCountPersonal"></span>
+<!-- ===== 各班情况 ===== -->
+<div id="tab-class-diff" class="tab-panel">
+    <div class="batch-info-bar" id="batchInfoClassDiff">
+        <span class="batch-icon">📊</span>
+        <span>当前批次：<span class="batch-label" id="batchLabelClassDiff">未加载</span></span>
+        <span class="batch-count" id="batchCountClassDiff"></span>
     </div>
-    <div class="controls">
-        <div class="control-group"><label>学生姓名：</label>
-            <input type="text" id="nameSearch" placeholder="输入或选择姓名" list="studentNameList" style="width:160px;">
-            <datalist id="studentNameList"></datalist>
+
+    <div id="classDiffBatchPicker" style="display:none;flex-wrap:wrap;gap:8px;margin:8px 0 12px;font-size:13px;align-items:center;">
+        <span style="font-weight:bold;margin-right:4px;">对比批次：</span>
+    </div>
+
+    <!-- 各班级各科及总分均分统计 -->
+    <div class="statistics-section" id="classDiffMeanSection" style="display:none;">
+        <h3 style="font-size:1.2em;color:#2c3e50;margin-bottom:10px;">各班级各科及总分均分统计</h3>
+        <div class="scroll-container" style="max-height:400px;">
+            <table id="classDiffMeanTable" class="stats-table"></table>
         </div>
-        <div class="control-group"><label>排名范围：</label>
-            <input type="number" id="rankStart" value="1" min="1"> <span>—</span>
-            <input type="number" id="rankEnd" value="20" min="1"> <span>名</span>
-        </div>
-        <div class="control-group"><label>排名类型：</label>
-            <select id="rankType"><option value="级名">级名</option><option value="校名">校名</option><option value="班名">班名</option></select>
-        </div>
-        <button class="filter-btn" id="filterBtn">查询/分析</button>
-        <div class="control-group"><span>上下文：<b id="rangeValueDisplay">10 名</b></span>
-            <input type="range" id="searchContextRange" min="1" max="50" value="10" style="width:130px;">
-        </div>
-        <div class="control-group"><span>小题薄弱阈值：<b id="weakRateThresholdDisplay">0.60</b></span>
-            <input type="range" id="weakRateThreshold" min="0.1" max="0.9" value="0.6" step="0.01" style="width:100px;">
+        <div id="classDiffMeanComparison" style="display:none;margin-top:20px;">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
+                <span style="font-weight:bold;font-size:14px;">对比科目：</span>
+                <select id="classDiffMeanCompSubject" style="font-size:14px;padding:4px 8px;border-radius:4px;border:1px solid #ccc;"></select>
+            </div>
+            <div id="classDiffMeanLineChart" style="width:100%;height:400px;"></div>
         </div>
     </div>
-    <div id="aiAnalysisOutput" style="display:none;">
-        <div class="ai-analysis-container">
-            <h3>AI分析数据（JSON已生成，点击复制）</h3>
-            <pre id="analysisDataContent"></pre>
-            <div style="margin-top:6px;display:flex;align-items:center;gap:8px;">
-                <button class="upload-btn" id="copyAnalysisBtn">一键复制数据</button>
-                <span id="copyStatus" style="color:#27ae60;font-weight:bold;"></span>
-                <a href="https://www.deepseek.com" target="_blank" style="font-size:13px;color:#3498db;">→ 前往DeepSeek粘贴分析 | 分析完成后全选AI回复 → 复制 → 粘贴到记事本 → 另存为 .md 文件</a>
+
+    <!-- 等级分布统计 -->
+    <div class="statistics-section" id="classDiffGradeSection" style="display:none;margin-top:16px;">
+        <h3 style="font-size:1.2em;color:#2c3e50;margin-bottom:10px;">等级分布统计</h3>
+        <div id="classDiffGradePanel">
+            <div id="classDiffGradeTableContainer" class="scroll-container" style="max-height:300px;"></div>
+            <div style="display:flex;flex-direction:column;align-items:center;background:#f8fafc;border-radius:8px;padding:18px 10px 10px;margin:18px 0 0;">
+                <select id="classDiffGradeSubjectSelect" style="margin:0 0 12px;font-size:17px;padding:4px 16px;border-radius:6px;border:1px solid #b3c2cc;background:#fff;"></select>
+                <div id="classDiffGradeChart" style="width:100%;max-width:900px;height:420px;margin:0 auto;"></div>
             </div>
         </div>
     </div>
-    <div class="results-section" id="rankingTableOutput">
-        <div class="no-data">请先在「上传管理」中上传Excel数据，然后搜索姓名或设置排名范围点击查询</div>
+
+    <!-- 排序于名次段分布统计 -->
+    <div class="statistics-section" id="classDiffRankSection" style="display:none;margin-top:16px;">
+        <h3 style="font-size:1.2em;color:#2c3e50;margin-bottom:10px;">排序于名次段分布统计</h3>
+        <div class="filter-stats-bar">
+            <div class="filter-bar-item">
+                <span class="filter-bar-label">名次段间隔：</span>
+                <input type="number" id="classDiffIntervalInput" class="filter-bar-input" min="1" value="20" style="width:60px;">
+                <button class="filter-btn" id="classDiffUpdateBtn" style="padding:4px 8px;font-size:12px;margin-left:4px;">更新统计</button>
+            </div>
+            <div class="filter-bar-item">
+                <span class="filter-bar-label">排序依据：</span>
+                <select id="classDiffRankSubject" class="filter-bar-select"></select>
+            </div>
+        </div>
+        <div style="display:flex;gap:20px;margin-top:20px;flex-wrap:wrap;">
+            <div class="distribution-table-container" style="flex:1;overflow-x:auto;min-width:300px;">
+                <div id="classDiffDistributionTablesContainer"></div>
+            </div>
+            <div class="distribution-chart-container" style="flex:2;min-height:400px;min-width:400px;">
+                <div id="classDiffDistributionChart" style="width:100%;height:400px;"></div>
+            </div>
+        </div>
+        <div class="distribution-extra-charts" id="classDiffDistributionExtraCharts" style="display:flex;flex-wrap:wrap;gap:30px;margin-top:20px;"></div>
     </div>
+
+    <div class="no-data" id="classDiffPlaceholder">请先在「上传管理」中上传Excel数据</div>
 </div>
 
 <!-- ===== 集体分析 ===== -->
@@ -352,6 +377,49 @@
             </select>
         </div>
         <div id="scoreDistChart" style="width:100%;height:400px;"></div>
+    </div>
+</div>
+
+<!-- ===== 个人分析 ===== -->
+<div id="tab-personal" class="tab-panel">
+    <div class="batch-info-bar" id="batchInfoPersonal">
+        <span class="batch-icon">📦</span>
+        <span>当前批次：<span class="batch-label" id="batchLabelPersonal">未加载</span></span>
+        <span class="batch-count" id="batchCountPersonal"></span>
+    </div>
+    <div class="controls">
+        <div class="control-group"><label>学生姓名：</label>
+            <input type="text" id="nameSearch" placeholder="输入或选择姓名" list="studentNameList" style="width:160px;">
+            <datalist id="studentNameList"></datalist>
+        </div>
+        <div class="control-group"><label>排名范围：</label>
+            <input type="number" id="rankStart" value="1" min="1"> <span>—</span>
+            <input type="number" id="rankEnd" value="20" min="1"> <span>名</span>
+        </div>
+        <div class="control-group"><label>排名类型：</label>
+            <select id="rankType"><option value="级名">级名</option><option value="校名">校名</option><option value="班名">班名</option></select>
+        </div>
+        <button class="filter-btn" id="filterBtn">查询/分析</button>
+        <div class="control-group"><span>上下文：<b id="rangeValueDisplay">10 名</b></span>
+            <input type="range" id="searchContextRange" min="1" max="50" value="10" style="width:130px;">
+        </div>
+        <div class="control-group"><span>小题薄弱阈值：<b id="weakRateThresholdDisplay">0.60</b></span>
+            <input type="range" id="weakRateThreshold" min="0.1" max="0.9" value="0.6" step="0.01" style="width:100px;">
+        </div>
+    </div>
+    <div id="aiAnalysisOutput" style="display:none;">
+        <div class="ai-analysis-container">
+            <h3>AI分析数据（JSON已生成，点击复制）</h3>
+            <pre id="analysisDataContent"></pre>
+            <div style="margin-top:6px;display:flex;align-items:center;gap:8px;">
+                <button class="upload-btn" id="copyAnalysisBtn">一键复制数据</button>
+                <span id="copyStatus" style="color:#27ae60;font-weight:bold;"></span>
+                <a href="https://www.deepseek.com" target="_blank" style="font-size:13px;color:#3498db;">→ 前往DeepSeek粘贴分析 | 分析完成后全选AI回复 → 复制 → 粘贴到记事本 → 另存为 .md 文件</a>
+            </div>
+        </div>
+    </div>
+    <div class="results-section" id="rankingTableOutput">
+        <div class="no-data">请先在「上传管理」中上传Excel数据，然后搜索姓名或设置排名范围点击查询</div>
     </div>
 </div>
 
@@ -517,6 +585,12 @@
                 <div class="control-group"><label>科目：</label>
                     <select id="comprehensiveSubjFilter" class="filter-bar-select"></select>
                 </div>
+                <div class="control-group"><label>分层：</label>
+                    <select id="comprehensiveSubjTierMode" class="filter-bar-select">
+                        <option value="rank">排名分层（默认）</option>
+                        <option value="grade">等级分层（A+/A/B+/B/C+/C）</option>
+                    </select>
+                </div>
                 <button class="filter-btn" id="comprehensiveSubjBtn" style="background:#ca8a04;">📊 生成</button>
             </div>
         </div>
@@ -555,17 +629,18 @@ const DataPool = {
         const idx = this.batches.findIndex(b => b.id === id);
         if (idx >= 0) { this.batches.splice(idx, 1); this.currentBatchId = this.batches.length ? this.batches[this.batches.length - 1].id : null; }
     },
-    syncFromGlobalsIfEditing() {
-        if (!this.currentBatchId) return;
+    async syncFromGlobalsIfEditing() {
+        if (!this.currentBatchId) return true;
         const b = this.batches.find(x => x.id === this.currentBatchId);
-        if (!b) return;
+        if (!b) return false;
         b.combinedStudentData = deepClone(combinedStudentData);
         b.allSubjectHeaders = deepClone(allSubjectHeaders);
         b.uploadedFilesData = deepClone(uploadedFilesData);
         b.uploadedPdfs = deepClone(uploadedPdfs);
-        persistBatches();
+        var ok = await persistBatches();
         refreshBatchList();
         updateBatchInfoBars();
+        return ok;
     }
 };
 
@@ -580,40 +655,106 @@ function __batchDbg(hypothesisId, message, data) {
 // #endregion
 
 function persistBatches() {
-    var compact = DataPool.batches.map(function(b) {
-        var ufd = {};
-        Object.keys(b.uploadedFilesData || {}).forEach(function(k) {
-            var fe = b.uploadedFilesData[k];
-            ufd[k] = { fileName: fe.fileName, fileType: fe.fileType, studentData: fe.studentData, subjectHeaders: fe.subjectHeaders, headerRows: fe.headerRows };
+    return new Promise(function(resolve) {
+        var compact = DataPool.batches.map(function(b) {
+            var ufd = {};
+            Object.keys(b.uploadedFilesData || {}).forEach(function(k) {
+                var fe = b.uploadedFilesData[k];
+                ufd[k] = { fileName: fe.fileName, fileType: fe.fileType, studentData: fe.studentData, subjectHeaders: fe.subjectHeaders, headerRows: fe.headerRows };
+            });
+            return {
+                id: b.id, label: b.label, createdAt: b.createdAt,
+                combinedStudentData: b.combinedStudentData,
+                allSubjectHeaders: b.allSubjectHeaders,
+                uploadedPdfs: b.uploadedPdfs,
+                uploadedFilesData: ufd
+            };
         });
-        return {
-            id: b.id, label: b.label, createdAt: b.createdAt,
-            combinedStudentData: b.combinedStudentData,
-            allSubjectHeaders: b.allSubjectHeaders,
-            uploadedPdfs: b.uploadedPdfs,
-            uploadedFilesData: ufd
+        var json = JSON.stringify(compact);
+        var sizeMB = json.length / 1024 / 1024;
+        var request = indexedDB.open('ScoreAnalysisDB', 1);
+        request.onupgradeneeded = function(e) {
+            var db = e.target.result;
+            if (!db.objectStoreNames.contains('batches')) {
+                db.createObjectStore('batches', { keyPath: 'key' });
+            }
+        };
+        request.onsuccess = function(e) {
+            var db = e.target.result;
+            try {
+                var tx = db.transaction('batches', 'readwrite');
+                var store = tx.objectStore('batches');
+                store.put({ key: 'scoreBatches', value: json });
+                tx.oncomplete = function() {
+                    console.log('数据已持久化 (' + sizeMB.toFixed(1) + 'MB)');
+                    resolve(true);
+                };
+                tx.onerror = function() {
+                    console.warn('IndexedDB写入失败: ' + (tx.error && tx.error.message));
+                    var st = document.getElementById('batchStatus');
+                    if (st) st.textContent = '⚠ 保存失败！存储空间不足，请清理旧批次后重试';
+                    resolve(false);
+                };
+            } catch(e) {
+                console.warn('持久化失败 (' + sizeMB.toFixed(1) + 'MB): ' + e.message);
+                var st = document.getElementById('batchStatus');
+                if (st) st.textContent = '⚠ 保存失败！数据量(' + sizeMB.toFixed(1) + 'MB)超过浏览器存储配额，请清理旧批次或减少数据后重试';
+                resolve(false);
+            }
+        };
+        request.onerror = function() {
+            console.warn('IndexedDB无法打开');
+            var st = document.getElementById('batchStatus');
+            if (st) st.textContent = '⚠ 保存失败！无法访问浏览器存储';
+            resolve(false);
+        };
+        request.onblocked = function() {
+            console.warn('IndexedDB被阻塞');
+            resolve(false);
         };
     });
-    var json = JSON.stringify(compact);
-    var sizeMB = json.length / 1024 / 1024;
-    try {
-        localStorage.setItem('scoreBatches', json);
-        console.log('数据已持久化 (' + sizeMB.toFixed(1) + 'MB)');
-    } catch(e) {
-        console.warn('持久化失败 (' + sizeMB.toFixed(1) + 'MB): ' + e.message);
-    }
 }
 
 function restoreBatches() {
-    try {
-        var json = localStorage.getItem('scoreBatches');
-        if (json) {
-            var batches = JSON.parse(json);
-            DataPool.batches = batches;
-            if (batches.length) DataPool.currentBatchId = batches[batches.length - 1].id;
-            console.log('数据已恢复 (' + batches.length + '个批次)');
-        }
-    } catch(e) { console.warn('恢复数据失败', e); }
+    return new Promise(function(resolve) {
+        var request = indexedDB.open('ScoreAnalysisDB', 1);
+        request.onupgradeneeded = function(e) {
+            var db = e.target.result;
+            if (!db.objectStoreNames.contains('batches')) {
+                db.createObjectStore('batches', { keyPath: 'key' });
+            }
+        };
+        request.onsuccess = function(e) {
+            var db = e.target.result;
+            try {
+                var tx = db.transaction('batches', 'readonly');
+                var store = tx.objectStore('batches');
+                var getReq = store.get('scoreBatches');
+                getReq.onsuccess = function() {
+                    if (getReq.result && getReq.result.value) {
+                        try {
+                            var batches = JSON.parse(getReq.result.value);
+                            DataPool.batches = batches;
+                            if (batches.length) DataPool.currentBatchId = batches[batches.length - 1].id;
+                            console.log('数据已恢复 (' + batches.length + '个批次)');
+                        } catch(e) { console.warn('恢复数据解析失败', e); }
+                    }
+                    resolve();
+                };
+                getReq.onerror = function() {
+                    console.warn('IndexedDB读取失败');
+                    resolve();
+                };
+            } catch(e) {
+                console.warn('恢复数据失败', e);
+                resolve();
+            }
+        };
+        request.onerror = function() {
+            console.warn('IndexedDB无法打开');
+            resolve();
+        };
+    });
 }
 
 // ============================================================
@@ -694,6 +835,7 @@ function switchTab(tabId) {
     if (tabId === 'tab-collective') renderCollectiveAll();
     if (tabId === 'tab-trend') refreshTrendTab();
     if (tabId === 'tab-comprehensive') refreshComprehensiveTab();
+    if (tabId === 'tab-class-diff') renderClassDiffAll();
 }
 
 function updateBatchInfoBars() {
@@ -701,7 +843,7 @@ function updateBatchInfoBars() {
     const label = batch ? batch.label : (combinedStudentData.length ? '未保存批次' : '无数据');
     const count = combinedStudentData.length || 0;
     const countStr = count ? `（${count} 名学生）` : '';
-    var ids = ['batchLabelPersonal','batchLabelCollective','batchLabelTrend','batchLabelComprehensive','batchCountPersonal','batchCountCollective','batchCountTrend','batchCountComprehensive'];
+    var ids = ['batchLabelPersonal','batchLabelCollective','batchLabelTrend','batchLabelComprehensive','batchLabelClassDiff','batchCountPersonal','batchCountCollective','batchCountTrend','batchCountComprehensive','batchCountClassDiff'];
     ids.forEach(id => { const el = document.getElementById(id); if (el && id.startsWith('batchLabel')) el.textContent = label; else if (el) el.textContent = countStr; });
     if (!batch && !combinedStudentData.length) {
         ['batchInfoPersonal','batchInfoCollective'].forEach(id => { var el = document.getElementById(id); if (el) el.style.background = 'linear-gradient(135deg,#fef2f2,#fee2e2)'; });
@@ -748,6 +890,7 @@ function loadBatch(id) {
         document.getElementById('newBatchName').style.display = 'inline-block';
         document.getElementById('newBatchName').value = '';
         document.getElementById('saveBatchBtn').style.display = 'inline-block';
+        document.getElementById('saveBatchBtn').textContent = '保存批次';
         document.getElementById('deleteBatchBtn').style.display = 'none';
         document.getElementById('clearCurrentBtn').style.display = 'none';
         document.getElementById('batchStatus').textContent = '请先上传数据再保存批次';
@@ -761,9 +904,11 @@ function loadBatch(id) {
         uploadedPdfs = deepClone(batch.uploadedPdfs || []);
         document.getElementById('deleteBatchBtn').style.display = 'inline-block';
         document.getElementById('clearCurrentBtn').style.display = 'inline-block';
-        document.getElementById('newBatchName').style.display = 'none';
-        document.getElementById('saveBatchBtn').style.display = 'none';
-        document.getElementById('batchStatus').textContent = `已加载「${batch.label}」（${combinedStudentData.length}名学生）`;
+        document.getElementById('newBatchName').style.display = 'inline-block';
+        document.getElementById('newBatchName').value = batch.label;
+        document.getElementById('saveBatchBtn').style.display = 'inline-block';
+        document.getElementById('saveBatchBtn').textContent = '更新批次';
+        document.getElementById('batchStatus').textContent = `已加载「${batch.label}」（${combinedStudentData.length}名学生），可上传新文件后点击"更新批次"追加数据`;
     }
     renderFileList(); renderPdfList();
     updateStudentNameList(combinedStudentData);
@@ -774,27 +919,42 @@ document.getElementById('batchSelector').addEventListener('change', function() {
         loadBatch(null);
     } else { loadBatch(this.value); }
 });
-document.getElementById('saveBatchBtn').addEventListener('click', function() {
+document.getElementById('saveBatchBtn').addEventListener('click', async function() {
     if (!combinedStudentData.length) { alert('请先上传并解析数据！'); return; }
-    const name = document.getElementById('newBatchName').value.trim() || ('批次' + (DataPool.batches.length + 1));
-    DataPool.addBatch(name, { combinedStudentData: deepClone(combinedStudentData), allSubjectHeaders: deepClone(allSubjectHeaders), uploadedPdfs: deepClone(uploadedPdfs), uploadedFilesData: deepClone(uploadedFilesData) });
-    refreshBatchList();
-    persistBatches();
-    // Switch back to new-batch mode after saving
-    loadBatch(null);
-    document.getElementById('batchSelector').value = '__new__';
-    document.getElementById('newBatchName').style.display = 'inline-block';
-    document.getElementById('newBatchName').value = '';
-    document.getElementById('saveBatchBtn').style.display = 'inline-block';
-    document.getElementById('deleteBatchBtn').style.display = 'none';
-    document.getElementById('clearCurrentBtn').style.display = 'none';
-    document.getElementById('batchStatus').textContent = '已保存「' + name + '」（' + combinedStudentData.length + '名学生），可上传新数据继续保存';
-    updateBatchInfoBars();
+    var name = document.getElementById('newBatchName').value.trim();
+    if (DataPool.currentBatchId) {
+        var batch = DataPool.getCurrentBatch();
+        if (!batch) return;
+        if (name) batch.label = name;
+        var ok = await DataPool.syncFromGlobalsIfEditing();
+        if (ok) {
+            document.getElementById('batchStatus').textContent = '已更新「' + batch.label + '」（' + combinedStudentData.length + '名学生），可继续上传新文件';
+        }
+        updateBatchInfoBars();
+        document.getElementById('saveBatchBtn').textContent = '更新批次';
+    } else {
+        name = name || ('批次' + (DataPool.batches.length + 1));
+        DataPool.addBatch(name, { combinedStudentData: deepClone(combinedStudentData), allSubjectHeaders: deepClone(allSubjectHeaders), uploadedPdfs: deepClone(uploadedPdfs), uploadedFilesData: deepClone(uploadedFilesData) });
+        refreshBatchList();
+        var ok = await persistBatches();
+        loadBatch(null);
+        document.getElementById('batchSelector').value = '__new__';
+        document.getElementById('newBatchName').style.display = 'inline-block';
+        document.getElementById('newBatchName').value = '';
+        document.getElementById('saveBatchBtn').style.display = 'inline-block';
+        document.getElementById('saveBatchBtn').textContent = '保存批次';
+        document.getElementById('deleteBatchBtn').style.display = 'none';
+        document.getElementById('clearCurrentBtn').style.display = 'none';
+        if (ok) {
+            document.getElementById('batchStatus').textContent = '已保存「' + name + '」（' + combinedStudentData.length + '名学生），可上传新数据继续保存';
+        }
+        updateBatchInfoBars();
+    }
 });
-document.getElementById('deleteBatchBtn').addEventListener('click', function() {
+document.getElementById('deleteBatchBtn').addEventListener('click', async function() {
     if (!confirm('确定删除当前批次？')) return;
     DataPool.deleteBatch(DataPool.currentBatchId);
-    persistBatches();
+    await persistBatches();
     refreshBatchList();
     if (DataPool.batches.length) { loadBatch(DataPool.batches[DataPool.batches.length - 1].id); refreshBatchList(); updateBatchInfoBars(); }
     else { loadBatch(null); document.getElementById('batchSelector').value = '__new__'; }
@@ -2409,11 +2569,23 @@ document.getElementById('subFileInput').addEventListener('change', function(e) {
 document.getElementById('mainHeaderRows').addEventListener('change', () => { if (Object.keys(uploadedFilesData).length) reparseAndCombineData(); });
 document.getElementById('subHeaderRows').addEventListener('change', () => { if (Object.keys(uploadedFilesData).length) reparseAndCombineData(); });
 document.getElementById('pdfFileInput').addEventListener('change', async function(e) {
-    const files = Array.from(e.target.files || []).filter(f => /\.pdf$/i.test(f.name));
+    const files = Array.from(e.target.files || []).filter(f => /\.(pdf|md)$/i.test(f.name));
     for (const f of files) {
         const entry = { id: 'pdf_' + Date.now() + '_' + Math.random().toString(16).slice(2), fileName: f.name, markdown: '', status: 'parsing', errorMsg: '' };
         uploadedPdfs.push(entry); renderPdfList();
-        try { entry.markdown = await parsePdfToMarkdown(f); entry.status = 'ready'; } catch(err) { entry.status = 'error'; entry.errorMsg = String(err.message || err); }
+        try {
+            if (/\.md$/i.test(f.name)) {
+                entry.markdown = await new Promise(function(resolve, reject) {
+                    var reader = new FileReader();
+                    reader.onload = function(e) { resolve(e.target.result); };
+                    reader.onerror = function() { reject(new Error('读取MD文件失败')); };
+                    reader.readAsText(f);
+                });
+            } else {
+                entry.markdown = await parsePdfToMarkdown(f);
+            }
+            entry.status = 'ready';
+        } catch(err) { entry.status = 'error'; entry.errorMsg = String(err.message || err); }
         renderPdfList();
     }
     DataPool.syncFromGlobalsIfEditing();
@@ -2472,6 +2644,14 @@ document.getElementById('collectiveStudentQueryInput').addEventListener('keydown
 
 // Score distribution chart
 document.getElementById('intervalSelect').addEventListener('change', renderScoreDistChart);
+
+// Class diff tab
+document.getElementById('classDiffUpdateBtn').addEventListener('click', renderClassDiffRankDistribution);
+document.getElementById('classDiffRankSubject').addEventListener('change', renderClassDiffRankDistribution);
+document.getElementById('classDiffIntervalInput').addEventListener('change', renderClassDiffRankDistribution);
+document.getElementById('classDiffMeanCompSubject').addEventListener('change', function() {
+    renderClassDiffMeanLineChart([]);
+});
 
 // Trend analysis
 document.getElementById('trendDisplayMode').addEventListener('change', () => { if (DataPool.trendParsedSheets) { trendDisplayMode = document.getElementById('trendDisplayMode').value; updateTrendDisplay(); } });
@@ -3830,11 +4010,26 @@ function generateSeatingReport(className) {
 }
 
 // Single-subject class analysis
-function generateSingleSubjectClassReport(className, subjectName, threshold) {
+function generateSingleSubjectClassReport(className, subjectName, threshold, tierMode) {
+    if (tierMode == null) tierMode = 'rank';
     var students = combinedStudentData.filter(function(s) {
         return String(s.class) === className;
     });
     if (!students.length) return null;
+
+    // Validate grade data if grade mode selected
+    if (tierMode === 'grade') {
+        var sh = allSubjectHeaders.find(function(h) { return h.name === subjectName; });
+        var hasGradeCol = sh && sh.gradeIndex !== -1;
+        var hasGradeVal = students.some(function(s) {
+            var sd = s.subjects[subjectName];
+            return sd && sd.grade && String(sd.grade).trim() !== '';
+        });
+        if (!hasGradeCol || !hasGradeVal) {
+            if (!confirm('「' + className + ' — ' + subjectName + '」缺少等级数据，是否使用排名分层继续？')) return null;
+            tierMode = 'rank';
+        }
+    }
 
     var anchorSN = getTotalSubjectName(allSubjectHeaders);
     var totalPop = 100;
@@ -3853,12 +4048,27 @@ function generateSingleSubjectClassReport(className, subjectName, threshold) {
         return '后进';
     }
 
+    function getSubjTierByGrade(grade) {
+        if (!grade || typeof grade !== 'string') return '—';
+        var g = grade.trim().toUpperCase();
+        if (g === 'A+' || g === 'A') return '领先';
+        if (g === 'B+') return '中上';
+        if (g === 'B') return '临界';
+        if (g === 'C+' || g === 'C') return '后进';
+        return '—';
+    }
+
     var tierStudents = { '领先': [], '中上': [], '临界': [], '后进': [] };
     var allRates = [];
     students.forEach(function(s) {
         var sd = s.subjects[subjectName];
         var rank = sd ? (parseInt(sd.gradeRank, 10) || parseInt(sd.schoolRank, 10) || null) : null;
-        var tier = getSubjTier(rank);
+        var tier;
+        if (tierMode === 'grade') {
+            tier = getSubjTierByGrade(sd ? sd.grade : '');
+        } else {
+            tier = getSubjTier(rank);
+        }
         if (!tierStudents[tier]) tierStudents[tier] = [];
         var fm = null;
         var fullMarks = expandSubjectFullMarks(getSubjectFullMarksFromInputs());
@@ -3876,7 +4086,12 @@ function generateSingleSubjectClassReport(className, subjectName, threshold) {
     students.forEach(function(s) {
         var sd = s.subjects[subjectName];
         var rank = sd ? (parseInt(sd.gradeRank, 10) || parseInt(sd.schoolRank, 10) || null) : null;
-        var tier = getSubjTier(rank);
+        var tier;
+        if (tierMode === 'grade') {
+            tier = getSubjTierByGrade(sd ? sd.grade : '');
+        } else {
+            tier = getSubjTier(rank);
+        }
         if (!tierWeakAgg[tier]) tierWeakAgg[tier] = {};
         if (!tierCorrectAns[tier]) tierCorrectAns[tier] = {};
         if (sd && sd.subScores) {
@@ -3903,6 +4118,7 @@ function generateSingleSubjectClassReport(className, subjectName, threshold) {
 
     // Cascade selection: top-down, each tier selects Top2 from remaining items
     var allTiers = ['领先','中上','临界','后进'];
+    var gradeTierMap = { '领先': 'A+, A', '中上': 'B+', '临界': 'B', '后进': 'C+, C' };
     var globalCandidates = []; // {itemName, tierCount, totalCount, tiers: []}
     function cascadeSelect(tier, excludeSet) {
         var agg = tierWeakAgg[tier];
@@ -3977,14 +4193,19 @@ function generateSingleSubjectClassReport(className, subjectName, threshold) {
     // Section 1: Tier statistics
     lines.push('## 一、分层统计');
     lines.push('');
-    lines.push('| 层次 | 学生 | 人数 | 得分率区间 |');
-    lines.push('|------|------|------|-----------|');
+    if (tierMode === 'grade') {
+        lines.push('分层依据：等级（A+ → 领先、A → 领先、B+ → 中上、B → 临界、C+ → 后进、C → 后进）');
+        lines.push('');
+    }
+    lines.push('| 层次' + (tierMode === 'grade' ? '（对应等级）' : '') + ' | 学生 | 人数 | 得分率区间 |');
+    lines.push('|------' + (tierMode === 'grade' ? '------------' : '') + '|------|------|-----------|');
     ['领先', '中上', '临界', '后进'].forEach(function(tier) {
         var stus = tierStudents[tier] || [];
         if (!stus.length) return;
         var rates = stus.map(function(s) { return s.rate; }).filter(function(r) { return r !== null; });
         var rateRange = rates.length ? Math.min.apply(null, rates) + '%-' + Math.max.apply(null, rates) + '%' : '—';
-        lines.push('| ' + tier + ' | ' + stus.map(function(s) { return s.name; }).join('、') + ' | ' + stus.length + ' | ' + rateRange + ' |');
+        var tierLabel = tierMode === 'grade' ? (tier + '（' + gradeTierMap[tier] + '）') : tier;
+        lines.push('| ' + tierLabel + ' | ' + stus.map(function(s) { return s.name; }).join('、') + ' | ' + stus.length + ' | ' + rateRange + ' |');
     });
     lines.push('');
 
@@ -4073,15 +4294,16 @@ function generateSingleSubjectClassReport(className, subjectName, threshold) {
     allTiers.forEach(function(tier) {
         var stus = tierStudents[tier] || [];
         if (!stus.length) return;
+        var tierLabel = tierMode === 'grade' ? (tier + '（对应' + gradeTierMap[tier] + '）') : tier;
         var selections = (tierSelections[tier] || []).filter(function(k) { return globalItemNames.indexOf(k) < 0; });
         if (!selections.length) {
-            lines.push('### ' + tier + '（' + stus.length + '人）');
+            lines.push('### ' + tierLabel + '（' + stus.length + '人）');
             lines.push('');
             lines.push('该层弱项已全部在全层共有池中展示');
             lines.push('');
             return;
         }
-        lines.push('### ' + tier + '（' + stus.length + '人）— 层特有');
+        lines.push('### ' + tierLabel + '（' + stus.length + '人）— 层特有');
         lines.push('');
         lines.push('| 题号 | 失分人数 | 平均得分率 | 选项分布 |');
         lines.push('|------|---------|-----------|---------|');
@@ -4103,12 +4325,13 @@ function generateSingleSubjectClassReport(className, subjectName, threshold) {
     // Section 3: Teaching suggestions template
     lines.push('## 三、分层教学建议（请AI补充）');
     lines.push('');
-    lines.push('| 层次 | 建议1 | 建议2 |');
-    lines.push('|------|-------|-------|');
+    lines.push('| 层次' + (tierMode === 'grade' ? '（对应等级）' : '') + ' | 建议1 | 建议2 |');
+    lines.push('|------' + (tierMode === 'grade' ? '------------' : '') + '|-------|-------|');
     ['领先', '中上', '临界', '后进'].forEach(function(tier) {
         var stus = tierStudents[tier] || [];
         if (!stus.length) return;
-        lines.push('| ' + tier + '（' + stus.length + '人） | （请AI根据失分要点填写） | （请AI根据失分要点填写） |');
+        var tierLabel = tierMode === 'grade' ? (tier + '（' + gradeTierMap[tier] + '）') : tier;
+        lines.push('| ' + tierLabel + '（' + stus.length + '人） | （请AI根据失分要点填写） | （请AI根据失分要点填写） |');
     });
     lines.push('');
 
@@ -4120,11 +4343,13 @@ document.getElementById('comprehensiveSubjBtn').addEventListener('click', functi
     var className = document.getElementById('comprehensiveSubjClassFilter').value;
     var subjectName = document.getElementById('comprehensiveSubjFilter').value;
     var threshold = parseFloat(document.getElementById('comprehensiveThreshold').value) || 0.6;
+    var tierMode = document.getElementById('comprehensiveSubjTierMode').value;
     if (!subjectName) { alert('请先选择科目'); return; }
     var students = combinedStudentData.filter(function(s) { return String(s.class) === className; });
     if (!students.length) { alert('该班级没有学生数据'); return; }
-    if (!confirm('即将为「' + className + ' — ' + subjectName + '」生成单科分析报告（分层+失分要点）。是否继续？')) return;
-    var report = generateSingleSubjectClassReport(className, subjectName, threshold);
+    var modeLabel = tierMode === 'grade' ? '等级分层' : '排名分层';
+    if (!confirm('即将为「' + className + ' — ' + subjectName + '」生成单科分析报告（' + modeLabel + '）。是否继续？')) return;
+    var report = generateSingleSubjectClassReport(className, subjectName, threshold, tierMode);
     if (!report) { alert('生成失败，请检查数据'); return; }
     document.getElementById('comprehensivePlaceholder').style.display = 'none';
     document.getElementById('comprehensiveOutput').style.display = 'block';
@@ -4172,13 +4397,714 @@ document.getElementById('comprehensiveCopyBtn').addEventListener('click', functi
     }
 });
 
+// ============================================================
+//  各班情况 TAB (adapted from 年级各科分析)
+// ============================================================
+classDiffEchartsInst = {};
+
+function normalizeClassName(cls) {
+    if (!cls) return '未知班级';
+    var s = String(cls).trim();
+    var hadBan = s.endsWith('班');
+    if (hadBan) s = s.slice(0, -1);
+    s = s.replace(/[（(]/g, '').replace(/[）)]/g, '');
+    if (/^[初高]/.test(s)) s = s.replace(/^[初高][一二三四]/, '');
+    s = s.replace(/^[七八九]年级?/, '');
+    s = s.replace(/^[一二三]年级?/, '');
+    s = s.replace(/^九年/, '');
+    s = s.replace(/^\d+年/, '');
+    // Handle "901"→"01班", "1201"→"01班" (三位/四位年级代码)
+    var gcm = s.match(/^(\d{3,4})$/);
+    if (gcm) {
+        var digits = gcm[1];
+        if (digits.length === 3) {
+            var gn = parseInt(digits[0], 10);
+            if (gn >= 7 && gn <= 9) return String(parseInt(digits.slice(1), 10)).padStart(2, '0') + '班';
+        } else if (digits.length === 4) {
+            var gn2 = parseInt(digits.slice(0, 2), 10);
+            if (gn2 >= 10 && gn2 <= 12) return String(parseInt(digits.slice(2), 10)).padStart(2, '0') + '班';
+        }
+    }
+    var nums = s.match(/\d+/g);
+    if (nums && nums.length > 0) {
+        return String(parseInt(nums[nums.length - 1], 10)).padStart(2, '0') + '班';
+    }
+    var cnChars = ['十','九','八','七','六','五','四','三','二','一'];
+    var cnVals = {'十':10,'九':9,'八':8,'七':7,'六':6,'五':5,'四':4,'三':3,'二':2,'一':1};
+    var lastIdx = -1, lastVal = 0;
+    cnChars.forEach(function(ch) {
+        var idx = s.lastIndexOf(ch);
+        if (idx >= lastIdx) { lastIdx = idx; lastVal = cnVals[ch]; }
+    });
+    if (lastIdx >= 0) return String(lastVal).padStart(2, '0') + '班';
+    return hadBan ? String(cls).trim() : String(cls).trim() + '班';
+}
+
+function hexToRgba(hex, alpha) {
+    var r = parseInt(hex.slice(1, 3), 16);
+    var g = parseInt(hex.slice(3, 5), 16);
+    var b = parseInt(hex.slice(5, 7), 16);
+    return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
+}
+function createPatternFill(patternChar, color) {
+    var canvas = document.createElement('canvas');
+    canvas.width = 14;
+    canvas.height = 14;
+    var ctx = canvas.getContext('2d');
+    ctx.fillStyle = hexToRgba(color, 0.12);
+    ctx.fillRect(0, 0, 14, 14);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    switch (patternChar) {
+        case '/': ctx.beginPath(); ctx.moveTo(14, 0); ctx.lineTo(0, 14); ctx.stroke(); break;
+        case '\\': ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(14, 14); ctx.stroke(); break;
+        case '|': ctx.beginPath(); ctx.moveTo(7, 0); ctx.lineTo(7, 14); ctx.stroke(); break;
+        case '-': ctx.beginPath(); ctx.moveTo(0, 7); ctx.lineTo(14, 7); ctx.stroke(); break;
+        case '+': ctx.beginPath(); ctx.moveTo(7, 0); ctx.lineTo(7, 14); ctx.stroke(); ctx.beginPath(); ctx.moveTo(0, 7); ctx.lineTo(14, 7); ctx.stroke(); break;
+        case 'x': ctx.beginPath(); ctx.moveTo(14, 0); ctx.lineTo(0, 14); ctx.stroke(); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(14, 14); ctx.stroke(); break;
+        case 'o': ctx.beginPath(); ctx.arc(7, 7, 3, 0, Math.PI * 2); ctx.stroke(); break;
+        case 'O': ctx.beginPath(); ctx.arc(7, 7, 5.5, 0, Math.PI * 2); ctx.stroke(); break;
+        case '.': ctx.beginPath(); ctx.arc(7, 7, 1.5, 0, Math.PI * 2); ctx.fill(); break;
+        case '*':
+            ctx.beginPath(); ctx.moveTo(2, 2); ctx.lineTo(12, 12); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(12, 2); ctx.lineTo(2, 12); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(7, 0); ctx.lineTo(7, 14); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(0, 7); ctx.lineTo(14, 7); ctx.stroke();
+            break;
+    }
+    return { image: canvas, repeat: 'repeat', patternUnits: 'userSpaceOnUse' };
+}
+
+function getClassDiffSelectedBatches() {
+    var cbs = document.querySelectorAll('#classDiffBatchPicker input[type=checkbox]');
+    var selected = [];
+    cbs.forEach(function(cb) {
+        if (cb.checked) {
+            var bid = cb.value;
+            var batch = DataPool.batches.find(function(b) { return b.id === bid; });
+            if (batch) selected.push({ id: batch.id, label: batch.label, data: batch.combinedStudentData, headers: batch.allSubjectHeaders });
+        }
+    });
+    return selected;
+}
+
+function renderClassDiffAll() {
+    if (!combinedStudentData.length || !allSubjectHeaders.length) {
+        document.getElementById('classDiffMeanSection').style.display = 'none';
+        document.getElementById('classDiffGradeSection').style.display = 'none';
+        document.getElementById('classDiffRankSection').style.display = 'none';
+        document.getElementById('classDiffBatchPicker').style.display = 'none';
+        document.getElementById('classDiffPlaceholder').style.display = 'block';
+        return;
+    }
+    document.getElementById('classDiffPlaceholder').style.display = 'none';
+    document.getElementById('classDiffMeanSection').style.display = 'block';
+    document.getElementById('classDiffGradeSection').style.display = 'block';
+    document.getElementById('classDiffRankSection').style.display = 'block';
+    // Build batch picker checkboxes
+    var picker = document.getElementById('classDiffBatchPicker');
+    // Save previous checkbox states
+    var prevChecked = {};
+    picker.querySelectorAll('input[type=checkbox]').forEach(function(cb) { prevChecked[cb.value] = cb.checked; });
+    picker.innerHTML = '<span style="font-weight:bold;margin-right:4px;">对比批次：</span>';
+    if (DataPool.batches.length > 1) {
+        picker.style.display = 'flex';
+        var colors = ['#5470c6','#91cc75','#fac858','#ee6666','#73c0de','#3ba272','#fc8452','#9a60b4'];
+        DataPool.batches.forEach(function(b, i) {
+            var label = document.createElement('label');
+            label.style.cssText = 'display:flex;align-items:center;gap:3px;cursor:pointer;padding:1px 4px;border-radius:3px;background:#f8f9fa;border:1px solid #e0e0e0;';
+            var cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.value = b.id;
+            cb.checked = prevChecked.hasOwnProperty(b.id) ? prevChecked[b.id] : (b.id === DataPool.currentBatchId);
+            cb.dataset.color = colors[i % colors.length];
+            cb.addEventListener('change', function() {
+                renderClassDiffAll();
+            });
+            var dot = document.createElement('span');
+            dot.style.cssText = 'display:inline-block;width:8px;height:8px;border-radius:50%;background:' + colors[i % colors.length] + ';';
+            label.appendChild(cb);
+            label.appendChild(dot);
+            label.appendChild(document.createTextNode(b.label));
+            picker.appendChild(label);
+        });
+    } else {
+        picker.style.display = 'none';
+    }
+    renderClassDiffMeanTable();
+    renderClassDiffGradeDistribution();
+    // Populate rank sorting subject dropdown
+    var rankSubjectSel = document.getElementById('classDiffRankSubject');
+    var prevVal = rankSubjectSel.value;
+    var scoredSubjects = allSubjectHeaders.filter(function(sh) { return sh.scoreIndex !== -1; });
+    rankSubjectSel.innerHTML = '';
+    var totalName = getTotalSubjectName(allSubjectHeaders);
+    scoredSubjects.forEach(function(sh) {
+        var opt = document.createElement('option');
+        opt.value = sh.name;
+        opt.textContent = sh.name;
+        rankSubjectSel.appendChild(opt);
+    });
+    if (prevVal && Array.from(rankSubjectSel.options).some(function(o) { return o.value === prevVal; })) {
+        rankSubjectSel.value = prevVal;
+    } else if (totalName && Array.from(rankSubjectSel.options).some(function(o) { return o.value === totalName; })) {
+        rankSubjectSel.value = totalName;
+    }
+    renderClassDiffRankDistribution();
+}
+
+function renderClassDiffMeanTable() {
+    // Get subjects that have scoreIndex, excluding metadata-only entries
+    var subjectHeaders = allSubjectHeaders.filter(function(sh) { return sh.scoreIndex !== -1; });
+    var totalName = getTotalSubjectName(allSubjectHeaders);
+    // Build display list: subjects + total at end
+    var displaySubjects = subjectHeaders.filter(function(sh) { return sh.name !== totalName; }).map(function(sh) { return sh.name; });
+    if (totalName) displaySubjects.push(totalName);
+    if (!displaySubjects.length) {
+        document.getElementById('classDiffMeanSection').style.display = 'none';
+        return;
+    }
+    // Group by class
+    var classMap = {};
+    combinedStudentData.forEach(function(stu) {
+        var cls = stu.class || '未知班级';
+        if (!classMap[cls]) classMap[cls] = [];
+        classMap[cls].push(stu);
+    });
+    var classNames = Object.keys(classMap).sort(function(a,b) {
+        var na = parseInt(a.match(/\d+/)?.[0] || '0');
+        var nb = parseInt(b.match(/\d+/)?.[0] || '0');
+        return na - nb || a.localeCompare(b);
+    });
+    // Compute averages
+    var stats = [];
+    classNames.forEach(function(cls) {
+        var arr = classMap[cls];
+        var row = { 班级: cls };
+        displaySubjects.forEach(function(sn) {
+            var vals = arr.map(function(s) { var sd = s.subjects[sn]; return sd ? parseFloat(sd.score) : NaN; }).filter(function(v) { return !isNaN(v); });
+            row[sn] = vals.length ? vals.reduce(function(a,b){return a+b;},0) / vals.length : '';
+        });
+        stats.push(row);
+    });
+    // Max/Min per column among class averages
+    var maxMap = {}, minMap = {};
+    displaySubjects.forEach(function(sn) {
+        var vals = stats.map(function(r) { return r[sn]; }).filter(function(v) { return v !== '' && !isNaN(v); });
+        if (vals.length) { maxMap[sn] = Math.max.apply(null, vals); minMap[sn] = Math.min.apply(null, vals); }
+    });
+    // Global max/min (across all students)
+    var globalMax = {}, globalMin = {};
+    displaySubjects.forEach(function(sn) {
+        var vals = combinedStudentData.map(function(s) { var sd = s.subjects[sn]; return sd ? parseFloat(sd.score) : NaN; }).filter(function(v) { return !isNaN(v); });
+        globalMax[sn] = vals.length ? Math.max.apply(null, vals) : '';
+        globalMin[sn] = vals.length ? Math.min.apply(null, vals) : '';
+    });
+    // Render table
+    var table = document.getElementById('classDiffMeanTable');
+    var html = '<thead><tr><th>班级</th>';
+    displaySubjects.forEach(function(sn) { html += '<th>' + sn + '</th>'; });
+    html += '</tr></thead><tbody>';
+    stats.forEach(function(row) {
+        html += '<tr><td style="font-weight:bold;">' + row.班级 + '</td>';
+        displaySubjects.forEach(function(sn) {
+            var v = row[sn];
+            var cls = '';
+            if (v !== '') {
+                if (v === maxMap[sn] && v === minMap[sn]) cls = 'class="mean-max mean-min"';
+                else if (v === maxMap[sn]) cls = 'class="mean-max"';
+                else if (v === minMap[sn]) cls = 'class="mean-min"';
+            }
+            html += '<td ' + cls + '>' + (v !== '' ? Number(v).toFixed(2) : '') + '</td>';
+        });
+        html += '</tr>';
+    });
+    html += '<tr><td style="font-weight:bold;background:#ffe066;">最高分</td>';
+    displaySubjects.forEach(function(sn) {
+        var v = globalMax[sn];
+        html += '<td class="mean-max">' + (v !== '' ? v.toFixed(2) : '') + '</td>';
+    });
+    html += '</tr>';
+    html += '<tr><td style="font-weight:bold;background:#a5d8ff;">最低分</td>';
+    displaySubjects.forEach(function(sn) {
+        var v = globalMin[sn];
+        html += '<td class="mean-min">' + (v !== '' ? v.toFixed(2) : '') + '</td>';
+    });
+    html += '</tr>';
+    html += '</tbody>';
+    table.innerHTML = html;
+    // Populate comparison subject dropdown
+    var compSubjectSel = document.getElementById('classDiffMeanCompSubject');
+    compSubjectSel.innerHTML = '';
+    displaySubjects.forEach(function(sn) {
+        var opt = document.createElement('option');
+        opt.value = sn;
+        opt.textContent = sn;
+        compSubjectSel.appendChild(opt);
+    });
+    if (totalName) compSubjectSel.value = totalName;
+    renderClassDiffMeanLineChart(displaySubjects);
+}
+
+function renderClassDiffMeanLineChart(displaySubjects) {
+    var selectedBatches = getClassDiffSelectedBatches();
+    var comparisonDiv = document.getElementById('classDiffMeanComparison');
+    if (selectedBatches.length < 2) {
+        comparisonDiv.style.display = 'none';
+        return;
+    }
+    comparisonDiv.style.display = 'block';
+    var subject = document.getElementById('classDiffMeanCompSubject').value;
+    if (!subject) return;
+    // Compute per-class mean for each batch (normalize class names for cross-batch matching)
+    var batchClassMap = {};
+    selectedBatches.forEach(function(batch) {
+        var classMap = {};
+        batch.data.forEach(function(stu) {
+            var cls = normalizeClassName(stu.class || '未知班级');
+            if (!classMap[cls]) classMap[cls] = [];
+            classMap[cls].push(stu);
+        });
+        var classNames = Object.keys(classMap).sort(function(a,b) {
+            var na = parseInt(a.match(/\d+/)?.[0] || '0');
+            var nb = parseInt(b.match(/\d+/)?.[0] || '0');
+            return na - nb || a.localeCompare(b);
+        });
+        batchClassMap[batch.label] = { classNames: classNames, classMap: classMap };
+    });
+    // Collect all classes across all batches (normalized)
+    var allClasses = new Set();
+    Object.keys(batchClassMap).forEach(function(label) {
+        batchClassMap[label].classNames.forEach(function(cls) { allClasses.add(cls); });
+    });
+    var classList = Array.from(allClasses).sort(function(a,b) {
+        var na = parseInt(a.match(/\d+/)?.[0] || '0');
+        var nb = parseInt(b.match(/\d+/)?.[0] || '0');
+        return na - nb || a.localeCompare(b);
+    });
+    var batchLabels = selectedBatches.map(function(b) { return b.label; });
+    var lineTypes = ['solid', 'dashed', 'dotted'];
+    var symbols = ['circle', 'triangle', 'rect', 'diamond'];
+    var series = classList.map(function(cls, idx) {
+        var data = selectedBatches.map(function(batch) {
+            var info = batchClassMap[batch.label];
+            if (!info) return '-';
+            var arr = info.classMap[cls];
+            if (!arr || !arr.length) return '-';
+            var vals = arr.map(function(s) { var sd = s.subjects[subject]; return sd ? parseFloat(sd.score) : NaN; }).filter(function(v) { return !isNaN(v); });
+            return vals.length ? (vals.reduce(function(a,b){return a+b;},0) / vals.length) : '-';
+        });
+        return {
+            name: cls,
+            type: 'line',
+            data: data,
+            smooth: true,
+            lineStyle: { type: lineTypes[idx % lineTypes.length] },
+            symbol: symbols[Math.floor(idx / lineTypes.length) % symbols.length],
+            symbolSize: 8
+        };
+    });
+    var chartDiv = document.getElementById('classDiffMeanLineChart');
+    var existing = chartDiv.__chart;
+    if (existing) try { existing.dispose(); } catch(e) {}
+    var chart = echarts.init(chartDiv, null, {renderer:'svg'});
+    chartDiv.__chart = chart;
+    chart.setOption({
+        tooltip: { trigger: 'axis' },
+        legend: { data: classList, top: 0, textStyle: { fontSize: 14 } },
+        xAxis: { type: 'category', data: batchLabels, axisLabel: { fontSize: 15 } },
+        yAxis: { type: 'value', name: '均分', axisLabel: { fontSize: 15 } },
+        series: series,
+        grid: { left: 60, right: 20, top: 40, bottom: 40 }
+    });
+    chart.resize();
+}
+
+function renderClassDiffGradeDistribution() {
+    var gradeSubjects = allSubjectHeaders.filter(function(sh) { return sh.gradeIndex !== -1; });
+    if (!gradeSubjects.length) {
+        document.getElementById('classDiffGradeSection').style.display = 'none';
+        return;
+    }
+    document.getElementById('classDiffGradeSection').style.display = 'block';
+    // Collect all used grade values
+    var allGrades = new Set();
+    combinedStudentData.forEach(function(stu) {
+        gradeSubjects.forEach(function(sh) {
+            var sd = stu.subjects[sh.name];
+            if (sd && sd.grade && typeof sd.grade === 'string') allGrades.add(sd.grade.trim());
+        });
+    });
+    var gradeOrder = ['A+','A','B+','B','C+','C'];
+    var grades = Array.from(allGrades).sort(function(a,b) {
+        var ia = gradeOrder.indexOf(a), ib = gradeOrder.indexOf(b);
+        if (ia !== -1 && ib !== -1) return ia - ib;
+        if (ia !== -1) return -1; if (ib !== -1) return 1;
+        return a.localeCompare(b, 'zh-CN');
+    });
+    // Group by class
+    var classMap = {};
+    combinedStudentData.forEach(function(stu) {
+        var cls = stu.class || '未知班级';
+        if (!classMap[cls]) classMap[cls] = [];
+        classMap[cls].push(stu);
+    });
+    var classNames = Object.keys(classMap).sort(function(a,b) {
+        var na = parseInt(a.match(/\d+/)?.[0] || '0');
+        var nb = parseInt(b.match(/\d+/)?.[0] || '0');
+        return na - nb || a.localeCompare(b);
+    });
+    // Stats per class per grade subject
+    var stats = [];
+    classNames.forEach(function(cls) {
+        var arr = classMap[cls];
+        var row = { 班级: cls };
+        gradeSubjects.forEach(function(sh) {
+            var gradeCount = {};
+            grades.forEach(function(g) { gradeCount[g] = 0; });
+            arr.forEach(function(stu) {
+                var sd = stu.subjects[sh.name];
+                var g = sd ? (sd.grade || '').trim() : '';
+                if (grades.indexOf(g) >= 0) gradeCount[g]++;
+            });
+            row[sh.name] = gradeCount;
+        });
+        stats.push(row);
+    });
+    // Render table
+    var container = document.getElementById('classDiffGradeTableContainer');
+    var html = '<table class="stats-table"><thead><tr><th>班级</th>';
+    gradeSubjects.forEach(function(sh) { html += '<th>' + sh.name + '</th>'; });
+    html += '</tr></thead><tbody>';
+    stats.forEach(function(row) {
+        html += '<tr><td>' + row.班级 + '</td>';
+        gradeSubjects.forEach(function(sh) {
+            html += '<td>' + grades.map(function(g) { return g + ': <b>' + (row[sh.name][g] || 0) + '</b>'; }).join('<br>') + '</td>';
+        });
+        html += '</tr>';
+    });
+    html += '</tbody></table>';
+    container.innerHTML = html;
+    // Subject select for chart
+    var select = document.getElementById('classDiffGradeSubjectSelect');
+    select.innerHTML = '';
+    gradeSubjects.forEach(function(sh) {
+        var opt = document.createElement('option');
+        opt.value = sh.name; opt.textContent = sh.name; select.appendChild(opt);
+    });
+    var totalName = getTotalSubjectName(allSubjectHeaders);
+    var defaultIdx = gradeSubjects.findIndex(function(sh) { return sh.name === totalName; });
+    if (defaultIdx >= 0) select.selectedIndex = defaultIdx;
+    renderClassDiffGradeChart(gradeSubjects[select.selectedIndex].name, stats, classNames, grades);
+    select.onchange = function() {
+        renderClassDiffGradeChart(select.value, stats, classNames, grades);
+    };
+}
+
+function renderClassDiffGradeChart(selectedSubjectName, stats, classNames, grades) {
+    var chartDiv = document.getElementById('classDiffGradeChart');
+    if (!chartDiv) return;
+    if (chartDiv.__chart) try { chartDiv.__chart.dispose(); } catch(e) {}
+    var series = grades.map(function(g) {
+        return {
+            name: g, type: 'bar', stack: '等级',
+            data: stats.map(function(row) { return row[selectedSubjectName] ? (row[selectedSubjectName][g] || 0) : 0; }),
+            barGap: 0, barCategoryGap: '30%', emphasis: { focus: 'series' }, itemStyle: { opacity: 0.85 },
+            label: { show: true, position: 'inside', fontSize: 13, formatter: function(p) { return p.value > 0 ? p.value : ''; } }
+        };
+    });
+    var chart = echarts.init(chartDiv, null, {renderer:'svg'});
+    chartDiv.__chart = chart;
+    chart.setOption({
+        tooltip: {
+            trigger: 'item', axisPointer: { type: 'shadow' },
+            formatter: function(params) {
+                if (!params) return '';
+                return '班级: <b>' + params.name + '</b><br/>' + params.seriesName + ': <b>' + params.value + '</b>人';
+            }
+        },
+        legend: { data: grades, top: 0, textStyle: { fontSize: 14 } },
+        xAxis: { type: 'category', data: classNames, axisLabel: { fontSize: 14, rotate: 45, interval: 0 } },
+        yAxis: { type: 'value', name: '人数', axisLabel: { fontSize: 14 } },
+        series: series,
+        grid: { left: 60, right: 20, top: 40, bottom: 80 }
+    });
+    chart.resize();
+}
+
+function renderClassDiffRankDistribution() {
+    if (!combinedStudentData.length) return;
+    var select = document.getElementById('classDiffRankSubject');
+    var selectedSubject = select ? select.value : '';
+    if (!selectedSubject) {
+        document.getElementById('classDiffRankSection').style.display = 'none';
+        return;
+    }
+    document.getElementById('classDiffRankSection').style.display = 'block';
+    // Filter students with valid score for selected subject
+    var scoredStudents = combinedStudentData.filter(function(stu) {
+        var sd = stu.subjects[selectedSubject];
+        if (!sd) return false;
+        var s = parseFloat(sd.score);
+        return !isNaN(s) && isFinite(s);
+    });
+    if (!scoredStudents.length) {
+        document.getElementById('classDiffDistributionTablesContainer').innerHTML = '<div class="no-data">所选科目暂无有效的分数数据</div>';
+        return;
+    }
+    // Sort by score descending (higher score = better rank)
+    scoredStudents.sort(function(a, b) {
+        var sa = parseFloat(a.subjects[selectedSubject].score) || 0;
+        var sb = parseFloat(b.subjects[selectedSubject].score) || 0;
+        if (sb !== sa) return sb - sa;
+        return 0;
+    });
+    // Assign ranks with tie handling (same score = same rank, skip ranks accordingly)
+    var rankedStudents = [];
+    var currentRank = 1;
+    for (var i = 0; i < scoredStudents.length; i++) {
+        if (i > 0) {
+            var prevScore = parseFloat(scoredStudents[i-1].subjects[selectedSubject].score) || 0;
+            var currScore = parseFloat(scoredStudents[i].subjects[selectedSubject].score) || 0;
+            if (currScore !== prevScore) currentRank = i + 1;
+        }
+        rankedStudents.push({ rank: currentRank, student: scoredStudents[i], normClass: normalizeClassName(scoredStudents[i].class || '未知班级') });
+    }
+    // Class list from ranked students (using normalized names)
+    var classSet = new Set();
+    rankedStudents.forEach(function(item) { classSet.add(item.normClass); });
+    var classList = Array.from(classSet).sort(function(a,b) {
+        var na = parseInt(a.match(/\d+/)?.[0] || '0');
+        var nb = parseInt(b.match(/\d+/)?.[0] || '0');
+        return na - nb || a.localeCompare(b);
+    });
+    var interval = parseInt(document.getElementById('classDiffIntervalInput').value, 10) || 20;
+    if (interval < 1) interval = 1;
+    var maxRank = rankedStudents.length ? rankedStudents[rankedStudents.length - 1].rank : 0;
+    var segmentCount = Math.ceil(maxRank / interval);
+    var container = document.getElementById('classDiffDistributionTablesContainer');
+    var chartLabels = [], chartDatasets = {}, classColors = generateClassDiffColors(classList), classSegmentCounts = {};
+    var classSegmentStudents = {};
+    classList.forEach(function(cls) { classSegmentCounts[cls] = []; classSegmentStudents[cls] = []; });
+    var html = '<table class="distribution-table"><thead><tr><th>名次段</th>';
+    classList.forEach(function(cls) { html += '<th>' + cls + '</th>'; });
+    html += '<th>总人数</th></tr></thead><tbody>';
+    for (var i = 0; i < segmentCount; i++) {
+        var startRank = i * interval + 1;
+        var endRank = (i + 1) * interval;
+        var segmentLabel = startRank + '-' + endRank + '名';
+        chartLabels.push(segmentLabel);
+        // Students with rank in this segment
+        var segStudents = rankedStudents.filter(function(item) { return item.rank >= startRank && item.rank <= endRank; });
+        var classCounts = {}, total = 0;
+        segStudents.forEach(function(item) {
+            var cls = item.normClass || '未知班级';
+            classCounts[cls] = (classCounts[cls] || 0) + 1; total++;
+        });
+        classList.forEach(function(cls) {
+            if (!chartDatasets[cls]) { chartDatasets[cls] = { label: cls, data: [], backgroundColor: classColors[cls] || '#999' }; }
+            var count = classCounts[cls] || 0;
+            chartDatasets[cls].data.push(count);
+            classSegmentCounts[cls].push(count);
+            // Collect student names for this class+segment
+            var names = segStudents.filter(function(item) { return item.normClass === cls; }).map(function(item) { return item.student.name; });
+            classSegmentStudents[cls].push(names);
+        });
+        html += '<tr><td>' + segmentLabel + '</td>';
+        classList.forEach(function(cls) {
+            var count = classCounts[cls] || 0, percent = total > 0 ? (count / total * 100).toFixed(1) : 0;
+            html += '<td style="background:' + (classColors[cls] || '#999') + '20;">' + count + '人 (' + percent + '%)</td>';
+        });
+        html += '<td style="font-weight:bold;">' + total + '人</td></tr>';
+    }
+    html += '</tbody></table>';
+    container.innerHTML = html;
+    updateClassDiffDistributionChart(chartLabels, Object.values(chartDatasets));
+    // Multi-batch data for extra charts
+    var multiBatchRankData = null;
+    var selectedBatches = getClassDiffSelectedBatches();
+    if (selectedBatches.length > 1) {
+        multiBatchRankData = [];
+        selectedBatches.forEach(function(batch) {
+            var batchScored = batch.data.filter(function(stu) {
+                var sd = stu.subjects[selectedSubject];
+                if (!sd) return false;
+                var s = parseFloat(sd.score);
+                return !isNaN(s) && isFinite(s);
+            });
+            if (!batchScored.length) return;
+            batchScored.sort(function(a, b) {
+                var sa = parseFloat(a.subjects[selectedSubject].score) || 0;
+                var sb = parseFloat(b.subjects[selectedSubject].score) || 0;
+                return (sb !== sa) ? sb - sa : 0;
+            });
+            var batchRanked = [];
+            var cr = 1;
+            for (var ri = 0; ri < batchScored.length; ri++) {
+                if (ri > 0) {
+                    var ps = parseFloat(batchScored[ri-1].subjects[selectedSubject].score) || 0;
+                    var cs = parseFloat(batchScored[ri].subjects[selectedSubject].score) || 0;
+                    if (cs !== ps) cr = ri + 1;
+                }
+                batchRanked.push({ rank: cr, student: batchScored[ri], normClass: normalizeClassName(batchScored[ri].class || '未知班级') });
+            }
+            var bClassSegmentCounts = {};
+            var bClassSegmentStudents = {};
+            classList.forEach(function(cls) { bClassSegmentCounts[cls] = []; bClassSegmentStudents[cls] = []; });
+            var bMaxRank = batchRanked.length ? batchRanked[batchRanked.length - 1].rank : 0;
+            var bSegCount = Math.ceil(bMaxRank / interval);
+            if (bSegCount > segmentCount) bSegCount = segmentCount;
+            for (var si = 0; si < bSegCount; si++) {
+                var sStart = si * interval + 1;
+                var sEnd = (si + 1) * interval;
+                var segStu = batchRanked.filter(function(item) { return item.rank >= sStart && item.rank <= sEnd; });
+                classList.forEach(function(cls) {
+                    var cnt = segStu.filter(function(item) { return item.normClass === cls; }).length;
+                    bClassSegmentCounts[cls].push(cnt);
+                    var names = segStu.filter(function(item) { return item.normClass === cls; }).map(function(item) { return item.student.name; });
+                    bClassSegmentStudents[cls].push(names);
+                });
+            }
+            for (var si = bSegCount; si < segmentCount; si++) {
+                classList.forEach(function(cls) {
+                    bClassSegmentCounts[cls].push(0);
+                    bClassSegmentStudents[cls].push([]);
+                });
+            }
+            multiBatchRankData.push({ label: batch.label, classSegmentCounts: bClassSegmentCounts, classSegmentStudents: bClassSegmentStudents });
+        });
+    }
+    updateClassDiffDistributionExtraCharts(chartLabels, classList, classSegmentCounts, classColors, classSegmentStudents, multiBatchRankData);
+}
+
+function updateClassDiffDistributionChart(labels, datasets) {
+    var chartDiv = document.getElementById('classDiffDistributionChart');
+    if (!chartDiv) return;
+    if (classDiffEchartsInst.mainChart) try { classDiffEchartsInst.mainChart.dispose(); } catch(e) {}
+    var chart = echarts.init(chartDiv, null, {renderer: 'svg'});
+    classDiffEchartsInst.mainChart = chart;
+    chart.setOption({
+        tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+        legend: { data: datasets.map(function(ds) { return ds.label; }), top: 0, textStyle: { fontSize: 16 } },
+        xAxis: { type: 'category', data: labels, name: '名次段', nameLocation: 'middle', nameGap: 50, nameTextStyle: { fontSize: 18, fontWeight: 'bold' }, axisLabel: { fontSize: 15, interval: 0, rotate: 45, show: true } },
+        yAxis: { type: 'value', name: '人数', nameLocation: 'middle', nameGap: 30, nameTextStyle: { fontSize: 18, fontWeight: 'bold' }, axisLabel: { fontSize: 15, interval: 0, show: true } },
+        series: datasets.map(function(ds) { return { name: ds.label, type: 'bar', stack: 'total', data: ds.data, itemStyle: { color: ds.backgroundColor } }; }),
+        grid: { left: 60, right: 20, top: 5, bottom: 75 }
+    });
+}
+
+function updateClassDiffDistributionExtraCharts(labels, classList, classSegmentCounts, classColors, classSegmentStudents, multiBatchRankData) {
+    var container = document.getElementById('classDiffDistributionExtraCharts');
+    container.innerHTML = '';
+    if (classList.length < 1) return;
+    var isMulti = multiBatchRankData && multiBatchRankData.length > 0;
+    var batchColors = ['#5470c6','#91cc75','#fac858','#ee6666','#73c0de','#3ba272','#fc8452','#9a60b4'];
+    // Individual bar per class, 2 per row
+    classList.forEach(function(cls, idx) {
+        var barDiv = document.createElement('div');
+        barDiv.className = "distribution-extra-chart-item";
+        barDiv.style.width = 'calc(50% - 15px)';
+        barDiv.style.minWidth = '300px';
+        barDiv.innerHTML = '<div class="distribution-extra-chart-title">' + cls + '班各名次段人数</div><div id="classDiffEchartsBar_' + idx + '" style="width:100%;height:320px"></div>';
+        container.appendChild(barDiv);
+    });
+    // Pie chart
+    var pieDiv = document.createElement('div');
+    pieDiv.className = "distribution-extra-chart-item";
+    pieDiv.style.width = 'calc(50% - 15px)';
+    pieDiv.style.minWidth = '300px';
+    pieDiv.innerHTML = '<div class="distribution-extra-chart-title">各班级总人数分布</div><div id="classDiffEchartsPie" style="width:100%;height:320px"></div>';
+    container.appendChild(pieDiv);
+    setTimeout(function() {
+        // Bars per class
+        classList.forEach(function(cls, idx) {
+            var barId = 'classDiffEchartsBar_' + idx;
+            var barChart = echarts.init(document.getElementById(barId), null, {renderer:'svg'});
+            if (isMulti) {
+                var patternChars = ['/', '\\', '-', 'x', 'o', 'O', '.', '*'];
+                var batchSeries = multiBatchRankData.map(function(bd, bi) {
+                    var cnts = bd.classSegmentCounts[cls] || [];
+                    return {
+                        name: bd.label,
+                        type: 'bar',
+                        data: cnts,
+                        itemStyle: {
+                            color: createPatternFill(patternChars[bi % patternChars.length], batchColors[bi % batchColors.length]),
+                            borderColor: batchColors[bi % batchColors.length],
+                            borderWidth: 1
+                        }
+                    };
+                });
+                barChart.setOption({
+                    tooltip: {
+                        trigger: 'axis',
+                        formatter: function(ps) {
+                            if (!ps || !ps.length) return '';
+                            var res = '<b>' + cls + '班</b><br/>';
+                            ps.forEach(function(p) {
+                                var idx = p.dataIndex;
+                                var batchLabel = p.seriesName;
+                                var cnt = p.value;
+                                var names = (multiBatchRankData.find(function(bd) { return bd.label === batchLabel; })?.classSegmentStudents?.[cls]?.[idx]) || [];
+                                res += batchLabel + ' - ' + labels[idx] + ': <b>' + cnt + '</b>人';
+                                if (names.length > 0) res += ' (' + names.join('、') + ')';
+                                res += '<br/>';
+                            });
+                            return res;
+                        }
+                    },
+                    legend: { data: multiBatchRankData.map(function(bd) { return bd.label; }), top: 0, textStyle: { fontSize: 14 } },
+                    xAxis: { type: 'category', data: labels, axisLabel: { fontSize: 15, interval: 0, rotate: 45, show: true } },
+                    yAxis: { type: 'value', name: '人数', nameLocation: 'middle', nameGap: 40, nameRotate: 90, nameTextStyle: { fontSize: 16, fontWeight: 'bold' }, axisLabel: { fontSize: 18, interval: 0, show: true } },
+                    series: batchSeries,
+                    grid: { left: 60, right: 20, top: 40, bottom: 80 }
+                });
+            } else {
+                var studentsBySegment = (classSegmentStudents && classSegmentStudents[cls]) || [];
+                barChart.setOption({
+                    tooltip: {
+                        trigger: 'axis',
+                        formatter: function(ps) {
+                            if (!ps || !ps.length) return '';
+                            var p = ps[0];
+                            var idx = p.dataIndex;
+                            var names = studentsBySegment[idx] || [];
+                            var res = '<b>' + cls + '班</b><br/>名次段: ' + labels[idx] + '<br/>人数: <b>' + p.value + '</b>人';
+                            if (names.length > 0) res += '<br/>学生: ' + names.join('、');
+                            return res;
+                        }
+                    },
+                    xAxis: { type: 'category', data: labels, axisLabel: { fontSize: 15, interval: 0, rotate: 45, show: true } },
+                    yAxis: { type: 'value', name: '人数', nameLocation: 'middle', nameGap: 40, nameRotate: 90, nameTextStyle: { fontSize: 16, fontWeight: 'bold' }, axisLabel: { fontSize: 18, interval: 0, show: true } },
+                    series: [{ name: cls, type: 'bar', data: classSegmentCounts[cls], color: classColors[cls] }],
+                    grid: { left: 60, right: 20, top: 20, bottom: 80 }
+                });
+            }
+        });
+        // Pie (always uses current batch data)
+        var totalByClass = classList.map(function(cls) { return classSegmentCounts[cls].reduce(function(a,b){return a+b;}, 0); });
+        var pieChart = echarts.init(document.getElementById('classDiffEchartsPie'), null, {renderer:'svg'});
+        pieChart.setOption({
+            tooltip: { trigger: 'item', textStyle: { fontSize: 18 } },
+            legend: { orient: 'vertical', left: 10, data: classList, textStyle: { fontSize: 18 } },
+            series: [{ name: '班级分布', type: 'pie', radius: '45%', data: classList.map(function(cls,i) { return { value: totalByClass[i], name: cls, itemStyle: { color: classColors[cls] } }; }), label: { fontSize: 18, formatter: '{b}: {d}%' } }]
+        });
+    }, 40);
+}
+
+function generateClassDiffColors(classes) {
+    var colors = {}, palette = ['#4e79a7','#f28e2b','#e15759','#76b7b2','#59a14f','#edc948','#b07aa1','#ff9da7','#9c755f','#bab0ac','#8cd17d','#499894'];
+    classes.forEach(function(cls, idx) { colors[cls] = palette[idx % palette.length]; });
+    return colors;
+}
+
 // Try to load PDF.js
 try { var s2 = document.createElement('script'); s2.src = './pdf.min.js'; document.head.appendChild(s2); } catch(e) {}
 
 // Initial refresh (delayed restore for smooth startup)
 document.getElementById('batchStatus').textContent = '⏳ 正在恢复上次数据…';
-setTimeout(function() {
-    restoreBatches();
+setTimeout(async function() {
+    await restoreBatches();
     refreshBatchList();
     // #region agent log
     __batchDbg('H1', 'postRestoreBeforeLoad', { currentBatchId: DataPool.currentBatchId, combinedN: combinedStudentData.length, fileEntries: Object.keys(uploadedFilesData).length });
