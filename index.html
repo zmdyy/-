@@ -343,12 +343,11 @@
     </div>
 
     <div class="level-bar">
-        <label>等级线：</label>
-        <span>A+ ≥</span><input type="number" id="levelAplus" min="0" step="any">
-        <span>A ≥</span><input type="number" id="levelA" min="0" step="any">
-        <span>B+ ≥</span><input type="number" id="levelBplus" min="0" step="any">
-        <span>B ≥</span><input type="number" id="levelB" min="0" step="any">
-        <button class="filter-btn" id="levelApplyBtn">等级分析</button>
+        <label>等级分析：</label>
+        <span id="levelCheckboxContainer" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+            <span style="color:#999;font-size:13px;">请先选择科目以加载等级选项</span>
+        </span>
+        <button class="filter-btn" id="levelApplyBtn">分析所选等级</button>
     </div>
     <div id="levelAnalysisResult"></div>
 
@@ -2208,6 +2207,7 @@ function renderCollectiveAll() {
     document.getElementById('levelAnalysisResult').innerHTML = '';
     document.getElementById('collectiveStudentQueryResult').innerHTML = '';
     renderScoreDistChart();
+    populateLevelCheckboxes();
 }
 
 function renderScoreDistChart() {
@@ -2368,44 +2368,72 @@ function renderRankedAnalysis() {
 }
 
 function renderLevelAnalysis() {
-    const va = parseFloat(document.getElementById('levelAplus').value);
-    const vb = parseFloat(document.getElementById('levelA').value);
-    const vc = parseFloat(document.getElementById('levelBplus').value);
-    const vd = parseFloat(document.getElementById('levelB').value);
-    let levels = [];
-    if (!isNaN(va) && isNaN(vb)) levels.push({ label: 'A+', min: va, max: Infinity });
-    else if (!isNaN(va) && !isNaN(vb) && isNaN(vc)) { levels.push({ label: 'A+', min: va, max: Infinity }); levels.push({ label: 'A', min: vb, max: va }); }
-    else if (!isNaN(va) && !isNaN(vb) && !isNaN(vc) && isNaN(vd)) { levels.push({ label: 'A+', min: va, max: Infinity }); levels.push({ label: 'A', min: vb, max: va }); levels.push({ label: 'B+', min: vc, max: vb }); }
-    else if (!isNaN(va) && !isNaN(vb) && !isNaN(vc) && !isNaN(vd)) { levels.push({ label: 'A+', min: va, max: Infinity }); levels.push({ label: 'A', min: vb, max: va }); levels.push({ label: 'B+', min: vc, max: vb }); levels.push({ label: 'B', min: vd, max: vc }); }
-    else if (isNaN(va) && !isNaN(vb)) levels.push({ label: 'A', min: vb, max: Infinity });
+    const container = document.getElementById('levelCheckboxContainer');
+    const checkboxes = container ? container.querySelectorAll('input[type="checkbox"][data-grade]') : [];
+    const selectedGrades = [];
+    checkboxes.forEach(function(cb) { if (cb.checked) selectedGrades.push(cb.value); });
     const res = document.getElementById('levelAnalysisResult');
-    if (!levels.length) { res.innerHTML = '<div class="error">请至少输入A+或A等级的分数线。</div>'; return; }
+    if (!selectedGrades.length) { res.innerHTML = '<div class="error">请至少勾选一个等级。</div>'; return; }
     const fd = getCollectiveFilteredData();
-    const sc = document.getElementById('collectiveClassFilter').value;
     const ss = getSelectedSubject();
+    const sc = document.getElementById('collectiveClassFilter').value;
     const ct = sc ? (/\u73ed$/.test(sc)?sc:sc+'班') : '全部班级';
-    if (!fd.fullScoreField) { res.innerHTML = '<div class="error">未检测到全卷字段</div>'; return; }
+    var gradeCol = ss ? ss + '_等级' : (fd.fullScoreField ? fd.fullScoreField.replace('_分数','_等级') : '');
+    if (!gradeCol || fd.headers.indexOf(gradeCol) === -1) {
+        res.innerHTML = '<div class="error">所选科目无等级数据。</div>';
+        return;
+    }
     var hc = utilSplitHeaderCols(fd.headers);
     var scoreCols = hc.scoreCols, ansCols = hc.ansCols;
     var qd = utilBuildQuestionDict(scoreCols, ansCols, fd, ss);
     const qo = Object.keys(qd);
     let html = '';
-    levels.forEach(lv => {
-        const students = fd.data.filter(r => { const v = parseFloat(r[fd.fullScoreField]); return !isNaN(v) && v >= lv.min && (lv.max === Infinity || v < lv.max); });
-        html += `<div style="font-weight:bold;color:#2980b9;margin:8px 0 4px;">${lv.label} 等级（${lv.min} - ${lv.max===Infinity?'∞':lv.max}）：${students.length}人（<b>${ct}</b>）</div>`;
-        if (!students.length) { html += '<div style="color:#aaa;">该等级线下无学生</div>'; return; }
+    selectedGrades.forEach(function(lv) {
+        const students = fd.data.filter(function(r) { return String(r[gradeCol]||'').trim() === lv; });
+        html += '<div style="font-weight:bold;color:#2980b9;margin:8px 0 4px;">' + lv + ' 等级：' + students.length + '人（<b>' + ct + '</b>）</div>';
+        if (!students.length) { html += '<div style="color:#aaa;">该等级下无学生</div>'; return; }
         html += '<div class="scroll-container" style="max-height:200px;"><table><thead><tr><th>题目</th><th>分值表头</th><th>得分均值</th><th>最高分</th><th>最低分</th><th>错选分布</th><th>得分率(%)</th></tr></thead><tbody>';
-        qo.forEach(t => {
+        qo.forEach(function(t) {
             const item = qd[t]; if (!item || item.scoreIdx == null) return;
-            const scores = students.map(r => { const v = r[fd.headers[item.scoreIdx]]; return typeof v==='string'?parseFloat(v)||0:(v||0); }).filter(s => !isNaN(s));
-            const avg = scores.length ? scores.reduce((a,b)=>a+b,0)/scores.length : 0;
-            let rate = '-'; if (item.fullScore && scores.length) rate = ((avg/item.fullScore)*100).toFixed(1);
-            let wd = ''; if (item.ansIdx != null) { const cnts = {}; students.forEach(r => { const v = String(r[fd.headers[item.ansIdx]]||'').toUpperCase().trim(); if (v) cnts[v] = (cnts[v]||0)+1; }); wd = Object.keys(cnts).sort().map(k=>`${k}(${cnts[k]})`).join(' '); }
-            html += `<tr><td>${t}</td><td>${item.scoreHeader||''}</td><td>${scores.length?avg.toFixed(2):'-'}</td><td>${scores.length?Math.max(...scores):'-'}</td><td>${scores.length?Math.min(...scores):'-'}</td><td>${wd}</td><td>${rate==='-'?'-':rate+'%'}</td></tr>`;
+            const scores = students.map(function(r) { const v = r[fd.headers[item.scoreIdx]]; return typeof v==='string'?parseFloat(v)||0:(v||0); }).filter(function(s) { return !isNaN(s); });
+            const avg = scores.length ? scores.reduce(function(a,b){return a+b;},0)/scores.length : 0;
+            var rate = '-'; if (item.fullScore && scores.length) rate = ((avg/item.fullScore)*100).toFixed(1);
+            var wd = ''; if (item.ansIdx != null) { const cnts = {}; students.forEach(function(r) { const v = String(r[fd.headers[item.ansIdx]]||'').toUpperCase().trim(); if (v) cnts[v] = (cnts[v]||0)+1; }); wd = Object.keys(cnts).sort().map(function(k){return k+'('+cnts[k]+')';}).join(' '); }
+            html += '<tr><td>' + t + '</td><td>' + (item.scoreHeader||'') + '</td><td>' + (scores.length?avg.toFixed(2):'-') + '</td><td>' + (scores.length?Math.max.apply(null,scores):'-') + '</td><td>' + (scores.length?Math.min.apply(null,scores):'-') + '</td><td>' + wd + '</td><td>' + (rate==='-'?'-':rate+'%') + '</td></tr>';
         });
         html += '</tbody></table></div>';
     });
     res.innerHTML = html;
+}
+
+function populateLevelCheckboxes() {
+    const container = document.getElementById('levelCheckboxContainer');
+    if (!container) return;
+    const fd = getCollectiveFilteredData();
+    const ss = getSelectedSubject();
+    var gradeCol = ss ? ss + '_等级' : (fd.fullScoreField ? fd.fullScoreField.replace('_分数','_等级') : '');
+    if (!gradeCol || fd.headers.indexOf(gradeCol) === -1) {
+        container.innerHTML = '<span style="color:#999;font-size:13px;">所选科目无等级数据</span>';
+        return;
+    }
+    var gradeSet = new Set();
+    fd.data.forEach(function(r) { var g = String(r[gradeCol]||'').trim(); if (g) gradeSet.add(g); });
+    var grades = Array.from(gradeSet);
+    var gradeOrder = ['A+','A','B+','B','C+','C','D+','D','优','良','中','及格','不及格','合格','不合格'];
+    grades.sort(function(a,b) {
+        var ia = gradeOrder.indexOf(a), ib = gradeOrder.indexOf(b);
+        if (ia !== -1 && ib !== -1) return ia - ib;
+        if (ia !== -1) return -1; if (ib !== -1) return 1;
+        return a.localeCompare(b, 'zh-CN');
+    });
+    if (!grades.length) {
+        container.innerHTML = '<span style="color:#999;font-size:13px;">所选科目无等级数据</span>';
+        return;
+    }
+    var html = grades.map(function(g) {
+        return '<label style="font-weight:normal;cursor:pointer;"><input type="checkbox" data-grade="1" value="' + g.replace(/"/g,'&quot;') + '" checked> ' + g + '</label>';
+    }).join('');
+    container.innerHTML = html;
 }
 
 function showCollectiveStudentDetail(name) {
@@ -3098,7 +3126,7 @@ document.getElementById('copyAnalysisBtn').addEventListener('click', function() 
 
 // Collective analysis
 document.getElementById('collectiveClassFilter').addEventListener('change', () => { renderCollectiveTables(); renderCollectiveRankBar(); document.getElementById('collectiveStudentQueryResult').innerHTML = ''; });
-document.getElementById('collectiveSubjectFilter').addEventListener('change', () => { renderCollectiveTables(); renderScoreDistChart(); document.getElementById('collectiveStudentQueryResult').innerHTML = ''; });
+document.getElementById('collectiveSubjectFilter').addEventListener('change', () => { renderCollectiveTables(); renderScoreDistChart(); document.getElementById('collectiveStudentQueryResult').innerHTML = ''; populateLevelCheckboxes(); });
 document.getElementById('applyCollectiveThresholdBtn').addEventListener('click', () => { collectiveThreshold = +document.getElementById('collectiveThresholdInput').value || 0; renderCollectiveTables(); });
 document.getElementById('collectiveRankApplyBtn').addEventListener('click', renderRankedAnalysis);
 document.getElementById('levelApplyBtn').addEventListener('click', renderLevelAnalysis);
