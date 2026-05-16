@@ -428,6 +428,32 @@
     <div class="results-section" id="rankingTableOutput">
         <div class="no-data">请先在「上传管理」中上传Excel数据，然后搜索姓名或设置排名范围点击查询</div>
     </div>
+
+    <!-- ===== 跨次前十分析 ===== -->
+    <div id="crossExamSection" style="margin-top:24px;display:none;">
+        <hr style="margin:12px 0;border:none;border-top:2px dashed var(--primary);">
+        <h3 style="color:#2c3e50;margin-bottom:8px;">跨次前十名分析</h3>
+        <div id="crossExamBatchPicker" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px;padding:8px 12px;background:#f0f7ff;border-radius:8px;border:1px solid #b8d4fe;">
+            <span style="font-weight:bold;font-size:13px;color:var(--primary);">选择对比批次：</span>
+        </div>
+        <button class="filter-btn" id="crossExamBtn" style="margin-bottom:12px;">生成跨次前十分析</button>
+        <span id="crossExamStatus" style="color:#888;font-size:12px;margin-left:8px;"></span>
+        <div id="crossExamResult" style="display:none;">
+            <div class="statistics-section">
+                <h4 style="color:#2c3e50;">前十名对照表</h4>
+                <div class="scroll-container" style="max-height:400px;">
+                    <table id="crossExamTop10Table"></table>
+                </div>
+            </div>
+            <div class="statistics-section" style="margin-top:16px;">
+                <h4 style="color:#2c3e50;">稳定前十统计（上榜次数）</h4>
+                <div class="scroll-container" style="max-height:400px;">
+                    <table id="crossExamCountTable"></table>
+                </div>
+            </div>
+        </div>
+        <div id="crossExamEmpty" style="display:none;color:#888;text-align:center;padding:20px;">请选择至少2个批次后点击生成分析</div>
+    </div>
 </div>
 
 <!-- ===== 趋势分析 (V82完整布局) ===== -->
@@ -862,6 +888,10 @@ function refreshBatchList() {
     DataPool.batches.forEach(b => { const o = document.createElement('option'); o.value = b.id; o.textContent = b.label + ' (' + b.combinedStudentData.length + '人)'; sel.appendChild(o); });
     if (DataPool.currentBatchId) sel.value = DataPool.currentBatchId;
     renderSavedBatchTags();
+    renderCrossExamBatchPicker();
+    // Show/hide cross exam section based on batch count
+    var ces = document.getElementById('crossExamSection');
+    if (ces) ces.style.display = DataPool.batches.length >= 2 ? 'block' : 'none';
 }
 function renderSavedBatchTags() {
     var container = document.getElementById('savedBatchesTags');
@@ -2124,6 +2154,175 @@ function extractStudentAnalysisData(studentName, weakRateThOpt) {
 }
 
 // ============================================================
+//  CROSS-EXAM TOP 10 ANALYSIS
+// ============================================================
+function getTop10FromBatch(batch) {
+    var data = batch.combinedStudentData;
+    var headers = batch.allSubjectHeaders;
+    if (!data || !data.length || !headers || !headers.length) return [];
+    var totalName = getTotalSubjectName(headers);
+    if (!totalName) {
+        for (var hi = 0; hi < headers.length; hi++) {
+            if (headers[hi].scoreIndex !== -1) { totalName = headers[hi].name; break; }
+        }
+    }
+    if (!totalName) return [];
+    var withScore = [];
+    for (var si = 0; si < data.length; si++) {
+        var s = data[si];
+        var sd = s.subjects[totalName];
+        if (sd && hasMeaningfulValue(sd.score)) {
+            withScore.push({ name: s.name, score: parseFloat(sd.score) || 0, class: s.class || '' });
+        }
+    }
+    withScore.sort(function(a, b) { return b.score - a.score; });
+    return withScore.slice(0, 10);
+}
+
+function renderCrossExamBatchPicker() {
+    var picker = document.getElementById('crossExamBatchPicker');
+    if (!picker) return;
+    var prevChecked = {};
+    picker.querySelectorAll('input[type=checkbox]').forEach(function(cb) { prevChecked[cb.value] = cb.checked; });
+    picker.innerHTML = '<span style="font-weight:bold;font-size:13px;color:var(--primary);">选择对比批次：</span>';
+    if (!DataPool.batches.length) {
+        picker.innerHTML += '<span style="color:#999;font-size:12px;">暂无保存批次，请先在上传管理保存批次</span>';
+        return;
+    }
+    var colors = ['#5470c6','#91cc75','#fac858','#ee6666','#73c0de','#3ba272','#fc8452','#9a60b4'];
+    DataPool.batches.forEach(function(b, i) {
+        var label = document.createElement('label');
+        label.style.cssText = 'display:flex;align-items:center;gap:3px;cursor:pointer;padding:2px 6px;border-radius:3px;background:#fff;border:1px solid #e0e0e0;font-size:12px;';
+        var cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.value = b.id;
+        cb.checked = prevChecked.hasOwnProperty(b.id) ? prevChecked[b.id] : false;
+        var dot = document.createElement('span');
+        dot.style.cssText = 'display:inline-block;width:8px;height:8px;border-radius:50%;background:' + colors[i % colors.length] + ';';
+        label.appendChild(cb);
+        label.appendChild(dot);
+        label.appendChild(document.createTextNode(b.label + ' (' + b.combinedStudentData.length + '人)'));
+        picker.appendChild(label);
+    });
+}
+
+function renderCrossExamTop10() {
+    var statusEl = document.getElementById('crossExamStatus');
+    var cbs = document.querySelectorAll('#crossExamBatchPicker input[type=checkbox]:checked');
+    var selectedBatches = [];
+    cbs.forEach(function(cb) {
+        var batch = DataPool.batches.find(function(b) { return b.id === cb.value; });
+        if (batch) selectedBatches.push(batch);
+    });
+    if (selectedBatches.length < 2) {
+        document.getElementById('crossExamResult').style.display = 'none';
+        document.getElementById('crossExamEmpty').style.display = 'block';
+        statusEl.textContent = '';
+        return;
+    }
+    statusEl.textContent = '正在分析 ' + selectedBatches.length + ' 个批次...';
+    var batchTop10s = selectedBatches.map(function(batch) {
+        return { label: batch.label, top10: getTop10FromBatch(batch), id: batch.id };
+    });
+    renderCrossExamComparisonTable(batchTop10s);
+    renderCrossExamCountTable(batchTop10s);
+    document.getElementById('crossExamResult').style.display = 'block';
+    document.getElementById('crossExamEmpty').style.display = 'none';
+    statusEl.textContent = '分析完成（共 ' + selectedBatches.length + ' 个批次）';
+}
+
+function renderCrossExamComparisonTable(batchTop10s) {
+    var table = document.getElementById('crossExamTop10Table');
+    var html = '<thead><tr><th>名次</th>';
+    batchTop10s.forEach(function(bt) {
+        html += '<th>' + bt.label + '<br><span class="header-format">姓名/总分</span></th>';
+    });
+    html += '</tr></thead><tbody>';
+    // Collect all student names across all batches for cross-highlighting
+    var allTopStudents = {};
+    batchTop10s.forEach(function(bt) {
+        bt.top10.forEach(function(stu, rankIdx) {
+            var nk = String(stu.name).trim();
+            if (!allTopStudents[nk]) allTopStudents[nk] = { count: 0, batches: {} };
+            allTopStudents[nk].count++;
+            allTopStudents[nk].batches[bt.label] = rankIdx + 1;
+        });
+    });
+    var multiBatchStudents = {};
+    Object.keys(allTopStudents).forEach(function(nk) {
+        if (allTopStudents[nk].count >= 2) {
+            multiBatchStudents[nk] = allTopStudents[nk];
+        }
+    });
+    var multiBatchColors = ['#ffeaa7','#dfe6e9','#fab1a0','#81ecec','#a29bfe','#fd79a8','#fdcb6e','#55efc4','#e17055','#00cec9'];
+    var mbNames = Object.keys(multiBatchStudents);
+    var mbColorMap = {};
+    mbNames.forEach(function(nk, idx) {
+        mbColorMap[nk] = multiBatchColors[idx % multiBatchColors.length];
+    });
+    for (var ri = 0; ri < 10; ri++) {
+        html += '<tr><td style="font-weight:bold;">' + (ri + 1) + '</td>';
+        batchTop10s.forEach(function(bt) {
+            var stu = bt.top10[ri];
+            if (stu) {
+                var nk = String(stu.name).trim();
+                var bg = mbColorMap[nk] ? 'style="background:' + mbColorMap[nk] + ';"' : '';
+                html += '<td ' + bg + '><div class="rank-display">' + stu.name + '</div><div class="score-display">' + stu.score + '</div></td>';
+            } else {
+                html += '<td>-</td>';
+            }
+        });
+        html += '</tr>';
+    }
+    html += '</tbody>';
+    table.innerHTML = html;
+}
+
+function renderCrossExamCountTable(batchTop10s) {
+    var table = document.getElementById('crossExamCountTable');
+    var examLabels = batchTop10s.map(function(bt) { return bt.label; });
+    // Build student → { count, perExamRank: { examIdx: rank } }
+    var stuMap = {};
+    batchTop10s.forEach(function(bt, ei) {
+        bt.top10.forEach(function(stu, rankIdx) {
+            var nk = String(stu.name).trim();
+            if (!stuMap[nk]) stuMap[nk] = { name: stu.name, count: 0, ranks: {} };
+            stuMap[nk].count++;
+            stuMap[nk].ranks[ei] = rankIdx + 1;
+        });
+    });
+    var stuList = Object.keys(stuMap).map(function(k) { return stuMap[k]; });
+    // Sort: by count desc, then by sum of ranks asc
+    stuList.sort(function(a, b) {
+        if (a.count !== b.count) return b.count - a.count;
+        var sumA = 0, sumB = 0;
+        for (var ei = 0; ei < batchTop10s.length; ei++) {
+            if (a.ranks[ei] != null) sumA += a.ranks[ei];
+            if (b.ranks[ei] != null) sumB += b.ranks[ei];
+        }
+        return sumA - sumB;
+    });
+    var html = '<thead><tr><th>学生姓名</th><th>上榜次数</th>';
+    examLabels.forEach(function(label) {
+        html += '<th>' + label + '<br><span class="header-format">名次</span></th>';
+    });
+    html += '</tr></thead><tbody>';
+    stuList.forEach(function(entry) {
+        var fullCount = entry.count === batchTop10s.length;
+        html += '<tr' + (fullCount ? ' style="background:#d4edda;font-weight:bold;"' : '') + '>';
+        html += '<td>' + entry.name + '</td>';
+        html += '<td><span style="font-size:16px;font-weight:bold;color:' + (fullCount ? '#27ae60' : (entry.count >= 2 ? '#f39c12' : '#3498db')) + ';">' + entry.count + '/' + batchTop10s.length + '</span></td>';
+        examLabels.forEach(function(label, ei) {
+            var rank = entry.ranks[ei];
+            html += '<td>' + (rank != null ? rank : '-') + '</td>';
+        });
+        html += '</tr>';
+    });
+    html += '</tbody>';
+    table.innerHTML = html;
+}
+
+// ============================================================
 //  COLLECTIVE ANALYSIS TAB (adapted from 单科分析V3)
 // ============================================================
 function buildCollectiveDataFromCombined() {
@@ -3123,6 +3322,9 @@ document.getElementById('copyAnalysisBtn').addEventListener('click', function() 
     } else fallbackCopy(data);
     function fallbackCopy(d) { const inp = document.createElement('textarea'); inp.value = d; document.body.appendChild(inp); inp.select(); document.execCommand('copy'); document.body.removeChild(inp); cs.textContent = '已复制！'; setTimeout(() => cs.textContent = '', 3000); }
 });
+
+// Cross-exam top 10 analysis
+document.getElementById('crossExamBtn').addEventListener('click', renderCrossExamTop10);
 
 // Collective analysis
 document.getElementById('collectiveClassFilter').addEventListener('change', () => { renderCollectiveTables(); renderCollectiveRankBar(); document.getElementById('collectiveStudentQueryResult').innerHTML = ''; });
