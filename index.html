@@ -162,7 +162,7 @@
 
     <div class="tab-nav">
         <button class="active" data-tab="tab-upload">上传管理</button>
-        <button data-tab="tab-class-diff">各班区别</button>
+        <button data-tab="tab-class-diff">多维展示</button>
         <button data-tab="tab-collective">集体分析</button>
         <button data-tab="tab-personal">个人分析</button>
         <button data-tab="tab-trend">趋势分析</button>
@@ -241,7 +241,7 @@
     </div>
 </div>
 
-<!-- ===== 各班区别 ===== -->
+<!-- ===== 多维展示 ===== -->
 <div id="tab-class-diff" class="tab-panel">
     <div class="batch-info-bar" id="batchInfoClassDiff">
         <span class="batch-icon">📊</span>
@@ -280,9 +280,9 @@
         </div>
     </div>
 
-    <!-- 排序于名次段分布统计 -->
+    <!-- 排序与名次段分布统计 -->
     <div class="statistics-section" id="classDiffRankSection" style="display:none;margin-top:16px;">
-        <h3 style="font-size:1.2em;color:#2c3e50;margin-bottom:10px;">排序于名次段分布统计</h3>
+        <h3 style="font-size:1.2em;color:#2c3e50;margin-bottom:10px;">排序与名次段分布统计</h3>
         <div class="filter-stats-bar">
             <div class="filter-bar-item">
                 <span class="filter-bar-label">名次段间隔：</span>
@@ -2023,7 +2023,7 @@ function extractStudentAnalysisData(studentName, weakRateThOpt) {
         outputSpec: { format: "markdown", downloadable: false, copyInstruction: "请全选本回复的 Markdown 文本，复制后粘贴到本地文本编辑器（如记事本），保存为 .md 文件。保存后可在 Typora/Obsidian/VSCode 中查看，或导入 Word/WPS。",
             instruction: ["请将最终答案以完整的 Markdown 文本输出在聊天框中（你只能输出纯文本，无法创建文件）。用户将手动复制保存为 .md 文件。","章节标题必须与 requiredSections 完全一致（##），不得增删或改名。","侧重排名位次与单科排名结构差异。","小题薄弱环节表格必须含列：题号/模块、对应知识点、得分/满分、得分率、学生答案→正确答案、失分诊断；答案缺失填（无数据），禁止编造。","对应知识点：仅在有证据时写具体；否则写无法从现有数据精确定位（需题干/考点标签），禁止臆测。"].join("\n"),
             requiredSections: ["## 概览（总分与排名）","## 单科诊断（逐科：得分、排名、相对薄弱点）","## 小题/题型薄弱环节（按科目汇总 subScores 低分项）","## 关键问题归因（知识点/能力点假设）","## 提升建议（短期/中期）","## 学习计划清单（可打勾）"] },
-        paperMarkdowns: {}, paperMarkdown: "", name: stuEntry.name, class: stuEntry.class, schoolType: stuEntry.schoolType, candidateType: stuEntry.candidateType,
+        paperMarkdown: "", name: stuEntry.name, class: stuEntry.class, schoolType: stuEntry.schoolType, candidateType: stuEntry.candidateType,
         ...(anchorSN && { rankingPopulations: { gradePopulation: totalPopulation, schoolPopulation: totalPopulation, classPopulation: classPopMap[String(stuEntry.class||'未知班级').trim()] || 0 } }),
         subjects: {}, weakScoreRateThreshold: wt,
         subjectFullMarks: expandSubjectFullMarks(getSubjectFullMarksFromInputs()),
@@ -2074,7 +2074,6 @@ function extractStudentAnalysisData(studentName, weakRateThOpt) {
             subjectGroups[q.subjectName].push(q);
         });
         const subjectParts = [];
-        const allPaperMarkdowns = {};
         Object.entries(subjectGroups).forEach(function(entry) {
             var subjName = entry[0], refs = entry[1];
             const pdfParts = [];
@@ -2113,14 +2112,12 @@ function extractStudentAnalysisData(studentName, weakRateThOpt) {
                     });
                 });
                 if (snippets.length) {
-                    var key = subjName + '::' + p.fileName;
-                    allPaperMarkdowns[key] = snippets.join('\n\n');
-                    pdfParts.push('#### 文件：' + p.fileName + '\n\n' + allPaperMarkdowns[key]);
+                    var snippetText = snippets.join('\n\n');
+                    pdfParts.push('#### 文件：' + p.fileName + '\n\n' + snippetText);
                 }
             });
             if (pdfParts.length) subjectParts.push('#### 科目：' + subjName + '\n\n' + pdfParts.join('\n\n'));
         });
-        ad.paperMarkdowns = allPaperMarkdowns;
         ad.paperMarkdown = subjectParts.join('\n\n');
     }
     if (Object.keys(ad.subjects).length === 0) return null;
