@@ -28,6 +28,10 @@
         .upload-btn.small { padding: 4px 10px; font-size: 12px; }
         .upload-btn.danger { background: var(--danger); }
         .file-input { display: none; }
+        .toast { position: fixed; bottom: 20px; right: 20px; background: #333; color: #fff; padding: 10px 18px; border-radius: 8px; font-size: 13px; z-index: 9999; opacity: 0; transform: translateY(10px); transition: opacity .3s, transform .3s; pointer-events: none; max-width: 320px; box-shadow: 0 4px 12px rgba(0,0,0,.2); }
+        .toast.show { opacity: 1; transform: translateY(0); }
+        .toast.success { background: #27ae60; }
+        .toast.info { background: #3498db; }
         .file-list { list-style: none; padding: 0; max-height: 160px; overflow-y: auto; margin-top: 6px; }
         .file-list li { background: #e9ecef; padding: 5px 8px; border-radius: 4px; margin-bottom: 3px; display: flex; justify-content: space-between; align-items: center; font-size: 12px; border-left: 4px solid #2ecc71; }
         .file-list li span { color: #7f8c8d; font-size: 11px; }
@@ -158,7 +162,7 @@
 
     <div class="tab-nav">
         <button class="active" data-tab="tab-upload">上传管理</button>
-        <button data-tab="tab-class-diff">各班情况</button>
+        <button data-tab="tab-class-diff">各班区别</button>
         <button data-tab="tab-collective">集体分析</button>
         <button data-tab="tab-personal">个人分析</button>
         <button data-tab="tab-trend">趋势分析</button>
@@ -202,8 +206,12 @@
             <input type="file" id="pdfFileInput" class="file-input" accept=".pdf,.md" multiple>
             <div id="pdfStatusText" style="font-size:12px;margin-top:5px;color:#888;">未上传PDF</div>
             <ul class="file-list" id="pdfFileList"></ul>
+            <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">
+                <button class="upload-btn small" onclick="refreshAllPdfAnalyses()" style="background:#2ecc71;" title="重新运行个人分析、集体分析等模块以应用科目变更">🔄 刷新分析</button>
+            </div>
         </div>
     </div>
+    <div id="toastContainer" class="toast"></div>
 
     <details style="margin-bottom:16px;">
         <summary style="cursor:pointer;font-weight:bold;color:#2c3e50;">各科满分设置</summary>
@@ -233,7 +241,7 @@
     </div>
 </div>
 
-<!-- ===== 各班情况 ===== -->
+<!-- ===== 各班区别 ===== -->
 <div id="tab-class-diff" class="tab-panel">
     <div class="batch-info-bar" id="batchInfoClassDiff">
         <span class="batch-icon">📊</span>
@@ -646,13 +654,6 @@ const DataPool = {
 
 function deepClone(obj) { return JSON.parse(JSON.stringify(obj)); }
 
-// #region agent log
-function __batchDbg(hypothesisId, message, data) {
-    try {
-        fetch('http://127.0.0.1:7351/ingest/0ba6bf56-8e61-403b-b71c-b8c804d72a79', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'ba6595' }, body: JSON.stringify({ sessionId: 'ba6595', location: '统合版(1).html', message: message, hypothesisId: hypothesisId, data: data || {}, timestamp: Date.now(), runId: (typeof window !== 'undefined' && window.__batchRunId) ? window.__batchRunId : 'batch-v1' }) }).catch(function () {});
-    } catch (e) {}
-}
-// #endregion
 
 function persistBatches() {
     return new Promise(function(resolve) {
@@ -980,10 +981,43 @@ function renderPdfList() {
     uploadedPdfs.forEach(p => {
         const li = document.createElement('li');
         var exportBtn = p.status === 'ready' ? '<button onclick="exportPdfMarkdown(\'' + p.id + '\')" style="background:#2ecc71;color:#fff;border:none;padding:2px 7px;border-radius:3px;cursor:pointer;font-size:11px;">导出MD</button>' : '';
-        li.innerHTML = p.fileName + ' <span>(' + (p.status === 'ready' ? '已解析' : p.status === 'parsing' ? '解析中...' : '失败') + ')</span><span style="display:flex;gap:4px;">' + exportBtn + '<button onclick="removePdf(\'' + p.id + '\')">移除</button></span>';
+        var subjectTag = '';
+        if (p.status === 'ready') {
+            if (!p.detectedSubject) { var d = detectSubjectByFileName(p.fileName); if (d) p.detectedSubject = d; }
+            var subj = p.detectedSubject || '未识别';
+            var subjectOptions = ['未识别','语文','数学','英语笔试','听说','物理','化学','历史','道法','生物','地理'];
+            var optsHtml = subjectOptions.map(function(s) { return '<option value="' + s + '"' + (s === subj ? ' selected' : '') + '>' + s + '</option>'; }).join('');
+            subjectTag = ' <select onchange="updatePdfSubject(\'' + p.id + '\',this.value)" style="font-size:10px;padding:1px 3px;border-radius:3px;border:1px solid #ccc;">' + optsHtml + '</select>';
+        }
+        var statusText = p.status === 'ready' ? '已解析' : p.status === 'parsing' ? '解析中...' : '失败';
+        var errMsg = p.status === 'error' && p.errorMsg ? ' (' + p.errorMsg + ')' : '';
+        li.innerHTML = p.fileName + ' <span>(' + statusText + errMsg + ')</span>' + subjectTag + '<span style="display:flex;gap:4px;">' + exportBtn + '<button onclick="removePdf(\'' + p.id + '\')">移除</button></span>';
         ul.appendChild(li);
     });
 }
+window.updatePdfSubject = function(id, subject) {
+    var p = uploadedPdfs.find(function(p) { return p.id === id; });
+    if (p) {
+        p.detectedSubject = subject === '未识别' ? null : subject;
+        p._qi = null;
+    }
+    showToast(subject === '未识别' ? '已清除科目' : '科目已设为「' + subject + '」', 'info');
+};
+function showToast(msg, type) {
+    var el = document.getElementById('toastContainer');
+    if (!el) return;
+    el.textContent = msg;
+    el.className = 'toast ' + (type || 'info');
+    el.classList.add('show');
+    clearTimeout(el._hideTimer);
+    el._hideTimer = setTimeout(function() { el.classList.remove('show'); }, 2500);
+}
+window.refreshAllPdfAnalyses = function() {
+    showToast('正在刷新分析…', 'info');
+    try { displayPersonalResults(); } catch(e) { console.warn('个人分析刷新失败', e); }
+    try { renderCollectiveTables(); } catch(e) { console.warn('集体分析刷新失败', e); }
+    showToast('分析已刷新', 'success');
+};
 window.removePdf = (id) => { uploadedPdfs = uploadedPdfs.filter(p => p.id !== id); renderPdfList(); };
 function exportPdfMarkdown(id) {
     var p = uploadedPdfs.find(function(p) { return p.id === id; });
@@ -1014,27 +1048,589 @@ function renderFileList() {
 }
 window.removeFile = (fid) => { delete uploadedFilesData[fid]; renderFileList(); combineAllStudentData(); displayPersonalResults(); };
 
-async function parsePdfToMarkdown(file) {
+async function parsePdfToMarkdown(file, progressCb) {
     if (!window.pdfjsLib) throw new Error('pdf.js未就绪');
     const ab = await file.arrayBuffer();
     const pdf = await window.pdfjsLib.getDocument({ data: ab, disableWorker: true }).promise;
-    const lines = ['---', 'title: ' + file.name, 'pages: ' + pdf.numPages, '---', '', '# 试卷文本', ''];
+    const mdLines = ['---', 'title: ' + file.name, 'pages: ' + pdf.numPages, '---', '', '# 试卷文本', ''];
+    const questions = [];
+
     for (let pn = 1; pn <= pdf.numPages; pn++) {
         const page = await pdf.getPage(pn);
         const tc = await page.getTextContent();
-        const items = (tc.items || []).map(it => ({ str: String(it.str || '').replace(/\s+/g, ' ').trim(), x: it.transform?.[4] ?? 0, y: it.transform?.[5] ?? 0 })).filter(it => it.str);
-        items.sort((a, b) => { const dy = b.y - a.y; if (Math.abs(dy) > 2) return dy; return a.x - b.x; });
-        const pls = []; let ly = null, cl = [];
-        for (const it of items) {
-            if (ly === null || Math.abs(it.y - ly) > 6) { if (cl.length) pls.push(cl.join(' ').trim()); cl = [it.str]; ly = it.y; }
-            else { cl.push(it.str); }
+        const rawItems = (tc.items || [])
+            .map(it => ({ str: String(it.str || '').replace(/\s+/g, ' ').trim(), x: it.transform?.[4] ?? 0, y: it.transform?.[5] ?? 0 }))
+            .filter(it => it.str && it.str !== '');
+
+        const cols = detectTextColumns(rawItems);
+        const allPageLines = [];
+        if (cols.length > 1) {
+            const colLines = cols.map(col => assembleLinesInCol(col));
+            const maxLen = Math.max(...colLines.map(cl => cl.length));
+            for (let i = 0; i < maxLen; i++) {
+                for (let ci = 0; ci < cols.length; ci++) {
+                    if (i < colLines[ci].length) allPageLines.push(colLines[ci][i]);
+                }
+            }
+        } else {
+            allPageLines.push(...assembleLinesInCol(cols[0]));
         }
-        if (cl.length) pls.push(cl.join(' ').trim());
-        lines.push('## 第 ' + pn + ' 页', '');
-        pls.forEach(t => lines.push(t));
-        lines.push('');
+
+        const pageStartLine = mdLines.length;
+        mdLines.push('## 第 ' + pn + ' 页', '');
+        allPageLines.forEach(t => mdLines.push(t));
+        mdLines.push('');
+
+        // Scan assembled lines on this page for question numbers
+        const pageContentLines = allPageLines;
+        detectQuestionsOnPage(pageContentLines, questions, pageStartLine + 2); // +2 for page header
     }
-    return lines.join('\n');
+
+    function detectTextColumns(items) {
+        if (items.length < 5) return [items];
+        const sorted = [...items].sort((a, b) => a.x - b.x);
+        let bestGap = 0, bestIdx = -1;
+        for (let i = 1; i < sorted.length; i++) {
+            const gap = sorted[i].x - sorted[i - 1].x;
+            if (gap > bestGap && gap > 60) { bestGap = gap; bestIdx = i; }
+        }
+        if (bestIdx < 0 || bestIdx >= sorted.length - 2) return [items];
+        const midX = (sorted[bestIdx - 1].x + sorted[bestIdx].x) / 2;
+        const left = items.filter(it => it.x < midX);
+        const right = items.filter(it => it.x >= midX);
+        if (left.length > 1 && right.length > 1) return [left, right];
+        return [items];
+    }
+
+    function assembleLinesInCol(items) {
+        const sorted = [...items].sort((a, b) => { const dy = b.y - a.y; if (Math.abs(dy) > 2) return dy; return a.x - b.x; });
+        const lines = []; let ly = null, cl = [];
+        for (const it of sorted) {
+            if (ly === null || Math.abs(it.y - ly) > 6) {
+                if (cl.length) lines.push(cl.join(' ').trim());
+                cl = [it.str]; ly = it.y;
+            } else { cl.push(it.str); }
+        }
+        if (cl.length) lines.push(cl.join(' ').trim());
+        return lines;
+    }
+
+    function detectQuestionsOnPage(pageLines, outArr, baseLineOffset) {
+        let curMajor = null, curSub = null, majorStartLine = -1, subStartLine = -1;
+        for (let i = 0; i < pageLines.length; i++) {
+            const L = pageLines[i];
+            if (!L) continue;
+            const cL = compactDigits(L);
+            const absLine = baseLineOffset + i;
+
+            // Major question: "5.", "5、", "5．", "第5题", "5)"
+            const mM = cL.match(/^(\d{1,3})\s*[\.、．)]/) || cL.match(/^第\s*(\d{1,3})\s*题/);
+            if (mM) {
+                if (curMajor !== null) {
+                    // Finalize previous major's text span
+                    finalizeQuestion(outArr, curMajor, null, majorStartLine, absLine - 1);
+                }
+                curMajor = mM[1]; curSub = null;
+                majorStartLine = absLine;
+                subStartLine = -1;
+                continue;
+            }
+
+            // Sub-question: "(1)", "（1）"
+            const sM = cL.match(/^[（(]\s*(\d{1,2})\s*[）)]/);
+            if (sM && curMajor !== null) {
+                if (curSub !== null) {
+                    finalizeQuestion(outArr, curMajor, curSub, subStartLine, absLine - 1);
+                }
+                curSub = sM[1];
+                subStartLine = absLine;
+                continue;
+            }
+        }
+        // Finalize last question on page
+        if (curMajor !== null && majorStartLine >= 0) {
+            if (curSub !== null && subStartLine >= 0) {
+                finalizeQuestion(outArr, curMajor, curSub, subStartLine, baseLineOffset + pageLines.length - 1);
+                // Also finalize the parent if not yet finalized (its start != sub start)
+                finalizeQuestion(outArr, curMajor, null, majorStartLine, baseLineOffset + pageLines.length - 1);
+            } else {
+                finalizeQuestion(outArr, curMajor, null, majorStartLine, baseLineOffset + pageLines.length - 1);
+            }
+        }
+    }
+
+    function finalizeQuestion(arr, major, minor, startL, endL) {
+        const key = minor ? major + '(' + minor + ')' : major;
+        // Merge cross-page continuation: extend endLine instead of skipping
+        var existing = arr.find(function(e) { return e.number === key; });
+        if (existing) {
+            existing.endLine = Math.max(existing.endLine, endL);
+            if (minor != null) existing.minor = minor;
+            if (major != null) existing.major = minor ? major : existing.major;
+            return;
+        }
+        arr.push({ number: key, major: minor ? major : null, minor: minor || null, startLine: startL, endLine: Math.max(startL, endL) });
+    }
+
+    const markdown = mdLines.join('\n');
+    // Build question text by slicing the assembled markdown
+    const qLines = markdown.split('\n');
+    const questionIndex = questions.map(function(q) {
+        var textLines = qLines.slice(q.startLine, q.endLine + 1);
+        return {
+            number: q.number,
+            major: q.major,
+            minor: q.minor,
+            startLine: q.startLine,
+            endLine: q.endLine,
+            text: textLines.join('\n').trim()
+        };
+    });
+    var inlineSubs = parseInlineSubQuestions(questionIndex, mdLines);
+    inlineSubs.forEach(function(sq) { questionIndex.push(sq); });
+    var detectedSubject = detectSubjectByFileName(file.name);
+    return { markdown: markdown, questionIndex: questionIndex, detectedSubject: detectedSubject };
+}
+
+// Rebuild question index from markdown text (backward compat for old saved PDFs)
+function buildQuestionIndexFromMarkdown(markdown) {
+    var lines = String(markdown || '').split(/\r?\n/);
+    var questions = [];
+    var curMajor = null, curSub = null, majorStart = -1, subStart = -1;
+    for (var i = 0; i < lines.length; i++) {
+        var L = lines[i];
+        if (!L || /^#/.test(L) || /^---/.test(L)) { if (!/^##\s*第\s*\d+\s*页/.test(L)) continue; }
+        var clean = L.replace(/^(\*\*)+|(\*\*)+$/g, '').trim();
+        if (!clean) continue;
+        var cClean = compactDigits(clean);
+        var mM = cClean.match(/^(\d{1,3})\s*[\.、．)]/) || cClean.match(/^第\s*(\d{1,3})\s*题/);
+        if (mM) {
+            if (curMajor !== null) finalizeQ();
+            curMajor = mM[1]; curSub = null; majorStart = i; subStart = -1;
+            continue;
+        }
+        var sM = cClean.match(/^[（(]\s*(\d{1,2})\s*[）)]/);
+        if (sM && curMajor !== null) {
+            if (curSub !== null) finalizeQ();
+            curSub = sM[1]; subStart = i;
+            continue;
+        }
+    }
+    if (curMajor !== null) finalizeQ();
+    function finalizeQ() {
+        if (curSub !== null && subStart >= 0) {
+            questions.push({ number: curMajor + '(' + curSub + ')', major: curMajor, minor: curSub, startLine: subStart, endLine: Math.max(subStart, i - 1) });
+        }
+        questions.push({ number: curMajor, major: null, minor: null, startLine: majorStart, endLine: Math.max(majorStart, i - 1) });
+    }
+    // Fill text
+    var result = questions.map(function(q) {
+        var textLines = lines.slice(q.startLine, q.endLine + 1);
+        return { number: q.number, major: q.major, minor: q.minor, startLine: q.startLine, endLine: q.endLine, text: textLines.join('\n').trim() };
+    });
+    var inlineSubs = parseInlineSubQuestions(result, lines);
+    inlineSubs.forEach(function(sq) { result.push(sq); });
+    return result;
+}
+
+// Fast question lookup from pre-built question index
+class PdfQuestionIndex {
+    constructor(questionIndexArray) {
+        this._byNum = new Map();
+        this._byComposite = new Map();
+        this._variants = new Map();
+        (questionIndexArray || []).forEach(function(q) {
+            if (!q || !q.number) return;
+            this._byNum.set(q.number, q);
+            this._variants.set(q.number.replace(/[（）]/g, '()'), q);
+            if (q.major && q.minor != null) {
+                this._byComposite.set(q.major + '-' + q.minor, q);
+                this._variants.set(q.major + '-' + q.minor, q);
+                this._variants.set(q.major + '-(' + q.minor + ')', q);
+                this._variants.set(q.major + '（' + q.minor + '）', q);
+                this._variants.set(q.major + '.' + q.minor, q);
+                this._variants.set(q.major + '．' + q.minor, q);
+            }
+        }, this);
+    }
+    findByNumber(num) {
+        var s = String(num);
+        return this._byNum.get(s) || this._variants.get(s) || null;
+    }
+    findComposite(major, minor) {
+        var key = String(major) + '-' + String(minor);
+        var entry = this._byComposite.get(key);
+        if (entry) return entry;
+        entry = this._byNum.get(major + '(' + minor + ')');
+        if (entry) return entry;
+        entry = this._variants.get(key);
+        if (entry) return entry;
+        entry = this._variants.get(major + '-(' + minor + ')');
+        if (entry) return entry;
+        return null;
+    }
+    findByKeyword(kw) {
+        if (!kw) return null;
+        var nk = String(kw).replace(/\s+/g, '');
+        for (var entry of this._byNum.values()) {
+            if (entry.text && entry.text.replace(/\s+/g, '').indexOf(nk) >= 0) return entry;
+        }
+        for (var entry of this._byNum.values()) {
+            if (entry.text && entry.text.indexOf(kw) >= 0) return entry;
+        }
+        return null;
+    }
+    getSnippet(number, markdownLines, contextBefore, contextAfter) {
+        var entry = this._byNum.get(String(number));
+        if (!entry) entry = this._variants.get(String(number));
+        if (!entry) return null;
+        var start = Math.max(0, entry.startLine - (contextBefore || 0));
+        var end = Math.min(markdownLines.length - 1, entry.endLine + (contextAfter || 0));
+        return { text: markdownLines.slice(start, end + 1).join('\n').trim(), startLine: start, endLine: end };
+    }
+}
+
+function ensurePdfQuestionIndex(pdfEntry) {
+    if (pdfEntry._qi && typeof pdfEntry._qi.findByNumber === 'function') return pdfEntry._qi;
+    var qiArr = pdfEntry.questionIndex;
+    if (!qiArr || !qiArr.length) {
+        qiArr = buildQuestionIndexFromMarkdown(pdfEntry.markdown);
+        pdfEntry.questionIndex = qiArr;
+    }
+    pdfEntry._qi = new PdfQuestionIndex(qiArr);
+    if (typeof pdfEntry._qi.findByNumber !== 'function') {
+        console.warn('PdfQuestionIndex created without findByNumber:', pdfEntry._qi);
+        pdfEntry._qi = null;
+    }
+    return pdfEntry._qi;
+}
+function detectSubjectByFileName(fileName) {
+    if (!fileName) return null;
+    var fn = String(fileName).toLowerCase();
+    var subjects = [
+        { name: '语文', keywords: ['语文','语言','汉语'] },
+        { name: '数学', keywords: ['数学'] },
+        { name: '英语笔试', keywords: ['英语','英语笔试','英文笔试','英文'] },
+        { name: '听说', keywords: ['听说','听力','英语听说','英语听力'] },
+        { name: '物理', keywords: ['物理'] },
+        { name: '化学', keywords: ['化学'] },
+        { name: '历史', keywords: ['历史'] },
+        { name: '道法', keywords: ['道法','道德','法治','政治','思想品德','道德与法治'] },
+        { name: '生物', keywords: ['生物'] },
+        { name: '地理', keywords: ['地理'] }
+    ];
+    var bestName = null, bestScore = 0;
+    subjects.forEach(function(s) {
+        var score = 0;
+        s.keywords.forEach(function(kw) {
+            if (fn.indexOf(kw) >= 0) score++;
+        });
+        if (score > bestScore) { bestScore = score; bestName = s.name; }
+    });
+    return bestScore >= 1 ? bestName : null;
+}
+
+function parseInlineSubQuestions(questionIndex, sourceLines) {
+    var existingNumbers = new Set();
+    questionIndex.forEach(function(q) { if (q.number) existingNumbers.add(q.number); });
+    var majorEntries = questionIndex.filter(function(q) { return q.major === null && q.minor === null; });
+    var newEntries = [];
+    majorEntries.forEach(function(majorEntry) {
+        var text = majorEntry.text;
+        if (!text) return;
+        var subRegex = /[（(]\s*(\d{1,2})\s*[）)]/g;
+        var matches = [];
+        var m;
+        while ((m = subRegex.exec(text)) !== null) {
+            matches.push({ num: m[1], index: m.index });
+        }
+        if (matches.length < 1) return;
+        var alreadyExists = matches.some(function(sm) {
+            return existingNumbers.has(majorEntry.number + '(' + sm.num + ')');
+        });
+        if (alreadyExists) return;
+        for (var si = 0; si < matches.length; si++) {
+            var startIdx = matches[si].index;
+            var endIdx = si < matches.length - 1 ? matches[si + 1].index : text.length;
+            var subText = text.slice(startIdx, endIdx).trim();
+            var num = majorEntry.number + '(' + matches[si].num + ')';
+            if (!existingNumbers.has(num)) {
+                var subStartLine = majorEntry.startLine;
+                var subEndLine = majorEntry.endLine;
+                if (sourceLines) {
+                    var markerStr = matches[si].num;
+                    for (var li = majorEntry.startLine; li <= Math.min(majorEntry.endLine, sourceLines.length - 1); li++) {
+                        var lineText = String(sourceLines[li] || '').replace(/^(\*\*)+|(\*\*)+$/g, '').trim();
+                        if (new RegExp('[（(]\\s*' + markerStr + '\\s*[）)]').test(lineText)) {
+                            subStartLine = li;
+                            break;
+                        }
+                    }
+                    if (si < matches.length - 1) {
+                        var nextMarker = matches[si + 1].num;
+                        for (var li2 = subStartLine + 1; li2 <= Math.min(majorEntry.endLine, sourceLines.length - 1); li2++) {
+                            var lineText2 = String(sourceLines[li2] || '').replace(/^(\*\*)+|(\*\*)+$/g, '').trim();
+                            if (new RegExp('[（(]\\s*' + nextMarker + '\\s*[）)]').test(lineText2)) {
+                                subEndLine = li2 - 1;
+                                break;
+                            }
+                        }
+                    }
+                }
+                newEntries.push({
+                    number: num,
+                    major: majorEntry.number,
+                    minor: matches[si].num,
+                    startLine: subStartLine,
+                    endLine: subEndLine,
+                    text: subText
+                });
+                existingNumbers.add(num);
+            }
+        }
+    });
+    return newEntries;
+}
+
+// Shared regex helper used by multiple matching sites
+function compactDigits(str) {
+    return String(str).replace(/(\d)\s+(?=\d)/g, '$1');
+}
+
+function parseCompositeQuestionRef(item) {
+    var compact = String(item || '').replace(/\s+/g, '');
+    // "5(1)", "5（1）", "5-(1)", "5-（1）", "5.(1)"
+    var m = compact.match(/(\d{1,2})[\-－．.]?[（(](\d{1,2})[）)]/);
+    if (m) return { major: +m[1], minor: +m[2] };
+    // Hyphenated multi-sub like "13-24" would be caught by expandItemRefs before reaching here.
+    // But for direct callers (fallback): only return if second group is 1 digit (avoids "24"→minor=24)
+    m = compact.match(/(\d{1,2})[\-－．.](\d{1,2})(?=[^\d]|$)/);
+    if (m) {
+        var pm1 = +m[1], pm2 = +m[2];
+        if (pm2 >= 10) return null; // Don't interpret "13-24" as minor=24 — let expandItemRefs split it
+        return { major: pm1, minor: pm2 };
+    }
+    return null;
+}
+
+// Normalize subject name matching between PDF detected subject and Excel header name
+function pdfSubjectMatches(detected, target) {
+    if (!detected || !target) return false;
+    var d = String(detected).trim(), t = String(target).trim();
+    if (d === t) return true;
+    var aliases = {
+        '语文': ['语文','语言','汉语'],
+        '数学': ['数学'],
+        '英语': ['英语','英语笔试','英文笔试','英文'],
+        '英语笔试': ['英语','英语笔试','英文笔试','英文'],
+        '听说': ['听说','听力','英语听说','英语听力'],
+        '物理': ['物理'],
+        '化学': ['化学'],
+        '历史': ['历史'],
+        '道法': ['道法','道德与法治','政治','思想政治','思想品德','道德','法治'],
+        '生物': ['生物'],
+        '地理': ['地理']
+    };
+    if (aliases[d]) return aliases[d].indexOf(t) >= 0;
+    if (aliases[t]) return aliases[t].indexOf(d) >= 0;
+    return d.indexOf(t) >= 0 || t.indexOf(d) >= 0;
+}
+
+// Strip prefixes/suffixes from Excel item names to get clean number
+function normalizeItemName(item) {
+    if (!item) return item;
+    var s = String(item).replace(/\s+/g, '');
+    s = s.replace(/^(单选题|多选题|填空题|判断题|简答题|计算题|解答题|论述题|实验题|作图题|证明题|问答题|选择题|客观题|单选|多选|填空|判断|简答|计算|解答|论述|实验|作图|证明|问答|选择|客观|第)/, '');
+    s = s.replace(/题$/, '');
+    return s;
+}
+
+// Expand item name into array of lookup targets: strings or {major,minor} objects
+function expandItemRefs(item) {
+    if (!item) return [item];
+    var s = normalizeItemName(item);
+    if (!s) return [item];
+    var results = [];
+    // Range in parens: "12(5-8)" or "12（5-8）"
+    var rangeM = s.match(/^(\d{1,2})[（(](\d{1,2})\s*[-－]\s*(\d{1,2})[）)]$/);
+    if (rangeM) {
+        for (var i = +rangeM[2]; i <= +rangeM[3]; i++) results.push({ major: +rangeM[1], minor: i });
+        return results;
+    }
+    // List in parens: "14（1、3、4）"
+    var listM = s.match(/^(\d{1,2})[（(]([\d、，, ]+)[）)]$/);
+    if (listM) {
+        listM[2].split(/[、，, ]+/).forEach(function(m) { if (m) results.push({ major: +listM[1], minor: +m }); });
+        if (results.length) return results;
+    }
+    // Hyphenated multi-sub: "13-245" → sub-questions 2,4,5; "13-24" → 2,4; "13-10" → 10
+    var multiSub = s.match(/^(\d{1,2})-(\d{2,})$/);
+    if (multiSub) {
+        var major = +multiSub[1], rest = multiSub[2];
+        if (rest.indexOf('0') >= 0) {
+            results.push({ major: major, minor: +rest });
+        } else {
+            for (var hi = 0; hi < rest.length; hi++) {
+                var d = +rest[hi];
+                if (d >= 1 && d <= 9) results.push({ major: major, minor: d });
+            }
+        }
+        return results;
+    }
+    // Simple range like "1-5" → ambiguous: could be range (Q1~Q5) or composite (Q1-5)
+    var simpleRange = s.match(/^(\d{1,2})\s*[-－]\s*(\d{1,2})$/);
+    if (simpleRange) {
+        var rStart = +simpleRange[1], rEnd = +simpleRange[2];
+        if (rStart < rEnd && rStart <= 9 && rEnd <= 9) {
+            var choice = confirm('题号 "' + s + '" 有歧义：\n\n作为【范围】展开为题号 ' + rStart + '～' + rEnd + '\n作为【子题】理解为第' + rStart + '题第' + rEnd + '小题\n\n确定=范围，取消=子题');
+            if (choice) {
+                for (var ri = rStart; ri <= rEnd; ri++) results.push(String(ri));
+                return results;
+            }
+            // else fall through to composite parsing
+        }
+    }
+    // Single composite: "14（2）", "5-1", "5-(1)"
+    var cq = parseCompositeQuestionRef(s);
+    if (cq) { results.push(cq); return results; }
+    // Plain number: "8", "单选8"→"8"
+    var numM = s.match(/(\d{1,3})/);
+    if (numM) { results.push(numM[1]); return results; }
+    results.push(item);
+    return results;
+}
+
+// Find questions in PDF index using expanded refs, with major-number + keyword fallback
+function findPdfQuestionEntries(qi, itemName) {
+    if (!qi || typeof qi.findByNumber !== 'function') return [];
+    var refs = expandItemRefs(itemName);
+    var entries = [];
+    refs.forEach(function(ref) {
+        var entry = ref && ref.major != null ? qi.findComposite(ref.major, ref.minor) : qi.findByNumber(String(ref));
+        if (entry && !entries.some(function(e) { return e.number === entry.number; })) {
+            entries.push({ number: entry.number, text: entry.text, startLine: entry.startLine, endLine: entry.endLine, major: entry.major, minor: entry.minor, matchType: 'exact' });
+        }
+    });
+    if (!entries.length) {
+        var majorM = String(itemName).replace(/\s+/g, '').match(/(\d{1,3})/);
+        if (majorM) {
+            var e = qi.findByNumber(majorM[1]);
+            if (e && !entries.some(function(en) { return en.number === e.number; })) {
+                entries.push({ number: e.number, text: e.text, startLine: e.startLine, endLine: e.endLine, major: e.major, minor: e.minor, matchType: 'major' });
+            }
+        }
+    }
+    if (!entries.length) {
+        var e = qi.findByKeyword(itemName);
+        if (e && !entries.some(function(en) { return en.number === e.number; })) {
+            entries.push({ number: e.number, text: e.text, startLine: e.startLine, endLine: e.endLine, major: e.major, minor: e.minor, matchType: 'keyword' });
+        }
+    }
+    return entries;
+}
+
+// Fallback raw-markdown scan when questionIndex misses the item (regex-based safety net)
+function findTextByItemFallback(lines, item) {
+    if (!lines || !lines.length || !item) return null;
+    var s = String(item).replace(/\s+/g, '');
+    var getEnd = function(start) {
+        for (var i = start + 1; i < lines.length; i++) {
+            var t = String(lines[i] || '').trim();
+            if (!t) continue;
+            if (/^\d{1,3}\s*[\.、．)]/.test(compactDigits(t)) || /^第\s*\d+\s*题/.test(t) || /^##/.test(t)) return i - 1;
+        }
+        return lines.length - 1;
+    };
+    var trimRange = function(start, end) {
+        while (end > start && !String(lines[end] || '').trim()) end--;
+        while (start < end && !String(lines[start] || '').trim()) start++;
+        return start <= end ? lines.slice(start, end + 1).join('\n').trim() : null;
+    };
+    var stripMd = function(t) { return String(t || '').replace(/^(\*\*)+|(\*\*)+$/g, '').trim(); };
+    var isMdHeader = function(t) { return t && /^#{1,6}\s/.test(t); };
+    // Hyphenated multi-sub: "13-245" → search for major question
+    var multiSub = s.match(/^(\d{1,2})-(\d{2,})$/);
+    if (multiSub) {
+        var majorNum = +multiSub[1];
+        var patterns = [
+            new RegExp('^' + majorNum + '\\s*[\\.、．]'),
+            new RegExp('^第\\s*' + majorNum + '\\s*题'),
+            new RegExp('^' + majorNum + '\\)')
+        ];
+        for (var i = 0; i < lines.length; i++) {
+            var t = compactDigits(stripMd(lines[i]));
+            if (!t) continue;
+            var matchedMajor = patterns.some(function(p) { return p.test(t); });
+            if (matchedMajor) {
+                var end = getEnd(i);
+                return trimRange(i, end);
+            }
+        }
+        return null;
+    }
+    // Composite ref: "16-1", "14（2）", "5-1"
+    var cq = parseCompositeQuestionRef(s);
+    if (cq) {
+        var patterns = [
+            new RegExp('^' + cq.major + '\\s*[\\.、．]'),
+            new RegExp('^第\\s*' + cq.major + '\\s*题'),
+            new RegExp('^' + cq.major + '\\)')
+        ];
+        for (var i = 0; i < lines.length; i++) {
+            var t = compactDigits(stripMd(lines[i]));
+            if (!t) continue;
+            var matchedMajor = patterns.some(function(p) { return p.test(t); });
+            if (matchedMajor) {
+                var minorPatterns = [
+                    new RegExp('[（(]\\s*' + cq.minor + '\\s*[）)]'),
+                    new RegExp('^' + cq.minor + '\\)')
+                ];
+                for (var j = i; j < Math.min(i + 150, lines.length); j++) {
+                    var t2 = compactDigits(stripMd(lines[j]));
+                    if (!t2) continue;
+                    var matchedMinor = minorPatterns.some(function(p) { return p.test(t2); });
+                    if (matchedMinor) {
+                        var end = getEnd(j);
+                        return trimRange(j, end);
+                    }
+                }
+                var end2 = getEnd(i);
+                return trimRange(i, end2);
+            }
+        }
+        return null;
+    }
+    // Plain number extraction
+    var numM = s.match(/\d{1,3}/);
+    if (numM) {
+        var num = numM[0];
+        var majorPatterns = [
+            new RegExp('^' + num + '\\s*[\\.、．]'),
+            new RegExp('^第\\s*' + num + '\\s*题'),
+            new RegExp('^' + num + '\\)')
+        ];
+        for (var i = 0; i < lines.length; i++) {
+            var t = compactDigits(stripMd(lines[i]));
+            if (!t) continue;
+            var matched = majorPatterns.some(function(p) { return p.test(t); });
+            if (matched) {
+                var end = getEnd(i);
+                return trimRange(i, end);
+            }
+        }
+    }
+    // Last resort: keyword search
+    var kw = s.replace(/[^\u4e00-\u9fff\w]/g, '').slice(0, 8);
+    if (kw.length >= 2) {
+        for (var i = 0; i < lines.length; i++) {
+            var t = lines[i] || '';
+            if (t.indexOf(kw) >= 0) {
+                var end = getEnd(i);
+                return trimRange(i, end);
+            }
+        }
+    }
+    return null;
 }
 
 // ============================================================
@@ -1147,10 +1743,6 @@ function combineAllStudentData() {
     applyFallbackGradeRanks(combinedStudentData, allSubjectHeaders);
     calculateFallbackRanks(combinedStudentData, allSubjectHeaders);
     DataPool.syncFromGlobalsIfEditing();
-    // #region agent log
-    var _b = DataPool.getCurrentBatch();
-    __batchDbg('H2', 'postCombine', { currentBatchId: DataPool.currentBatchId, combinedN: combinedStudentData.length, batchSnapN: _b && _b.combinedStudentData ? _b.combinedStudentData.length : -1, fileEntries: Object.keys(uploadedFilesData).length });
-    // #endregion
 }
 
 function updateStudentNameList(data) {
@@ -1189,7 +1781,7 @@ function parseDataByHeaderRows(fileEntry, rawData, overrideHeaderRows) {
     const km = { '分数':'scoreIndex','等级':'gradeIndex','校名':'schoolIndex','班名':'classIndex','级名':'rankIndex' };
     const sm = {}; const mhl = rawData.length ? Math.max(...rawData.map(r => r.length)) : 0;
     let lsn = '';
-    const kns = new Set((allSubjectHeaders || []).map(h => String(h?.name || '').trim()).filter(Boolean).concat(['语文','数学','英语','英语笔试','英语听力','物理','化学','生物','历史','地理','政治','道法','总分','理综','文综']));
+    const kns = new Set((allSubjectHeaders || []).map(h => String(h?.name || '').trim()).filter(Boolean).concat(['语文','数学','英语','英语笔试','英语听力','物理','化学','生物','历史','地理','政治','道法','道德与法治','总分','理综','文综']));
     const eMs = (t) => { const m = String(t||'').match(/[（(]\s*([0-9]+(?:\.[0-9]+)?)\s*分\s*[）)]/); return m ? parseFloat(m[1]) : null; };
     const eCa = (t) => { const m = String(t||'').match(/答案\s*[（(]\s*([^）)\s]+)\s*[）)]/); return m ? String(m[1]).trim() : ''; };
     for (let c = ssc; c < mhl; c++) {
@@ -1464,174 +2056,64 @@ function extractStudentAnalysisData(studentName, weakRateThOpt) {
         const hasValidRank = Object.keys(sa).some(k => k.includes('Rank'));
         if (sa.score !== 'N/A' || hasValidRank || (sa.subScores && Object.keys(sa.subScores).length > 0)) ad.subjects[sn] = sa;
     });
-    // --- V44 PDF snippets extraction (full logic) ---
+    // --- PDF snippets extraction (using PdfQuestionIndex) ---
     const readyPdfs = (uploadedPdfs || []).filter(p => p && p.status === 'ready' && p.fileName && p.markdown);
     if (readyPdfs.length && weakRefs.length) {
-        const parseCompositeQuestionRef = function(item) {
-            const compact = String(item||'').replace(/\s+/g,'');
-            let m = compact.match(/(\d{1,2})[（(](\d{1,2})[）)]/);
-            if (m) return { major: +m[1], minor: +m[2] };
-            m = compact.match(/(\d{1,2})[\-－．.](\d{1,2})(?=[^\d]|$)/);
-            if (m) return { major: +m[1], minor: +m[2] };
-            return null;
-        };
-        const stripMd = function(t) { return String(t||'').trim().replace(/^(\*\*)+|(\*\*)+$/g,''); };
-        const normL = function(line) { return String(line||'').replace(/\s+/g,''); };
-        var getPdfMarkdownBodyStartLine = function(lines) {
-            var dash = 0;
-            for (var bi = 0; bi < Math.min(lines.length || 0, 40); bi++) {
-                if (String(lines[bi] || '').trim() === '---') {
-                    dash++;
-                    if (dash >= 2) {
-                        var s = bi + 1;
-                        while (s < lines.length && !String(lines[s] || '').trim()) s++;
-                        if (/^#\s*试卷文本\s*$/.test(String(lines[s] || '').trim())) {
-                            s++;
-                            while (s < lines.length && !String(lines[s] || '').trim()) s++;
-                        }
-                        return Math.min(s, lines.length);
-                    }
-                }
-            }
-            return 0;
-        };
-        const findCompositeHitLine = function(lines, cq, itemRaw, minI) {
-            minI = (typeof minI === 'number' && minI > 0) ? minI : 0;
-            var major = cq.major, minor = cq.minor;
-            var majorIdx = -1;
-            var reMajorLine = new RegExp('^'+major+'\\s*[\\.、．]|^第\\s*'+major+'\\s*题');
-            var reMajorWithSub = new RegExp('^'+major+'\\s*[\\.、．].*[（(]\\s*'+minor+'\\s*[）)]');
-            for (var i=minI;i<lines.length;i++){var t=stripMd(lines[i]);if(reMajorLine.test(t)&&new RegExp('[（(]\\s*'+minor+'\\s*[）)]').test(t))return i;if(reMajorWithSub.test(t))return i;if(reMajorLine.test(t)){majorIdx=i;break;}}
-            var tryFused = function(i0,i1){for(var i=i0;i<i1;i++){var L=lines[i];if(!L)continue;if(L.indexOf(major+'（'+minor+'）')>=0||L.indexOf(major+'('+minor+')')>=0)return i;var nl=normL(L);if(nl.indexOf(major+'（'+minor+'）')>=0||nl.indexOf(major+'('+minor+')')>=0)return i;}return -1;};
-            if(majorIdx>=0){var win1=Math.min(lines.length,majorIdx+160);var subRe=new RegExp('^[（(]\\s*'+minor+'\\s*[）)]\\s*\\S');for(var i=majorIdx;i<win1;i++){var t=stripMd(lines[i]);if(subRe.test(t))return i;}var fi=tryFused(majorIdx,win1);if(fi>=0)return fi;}
-            var fg=tryFused(minI,lines.length);if(fg>=0)return fg;
-            if(itemRaw&&String(itemRaw).trim().length>=2){var it=String(itemRaw).trim();var i0=majorIdx>=0?majorIdx:minI;var i1=majorIdx>=0?Math.min(lines.length,majorIdx+160):lines.length;for(var i=i0;i<i1;i++){var L=lines[i];if(L&&(L.indexOf(it)>=0||normL(L).indexOf(normL(it))>=0))return i;}}
-            return -1;
-        };
-        var isChoiceQuestion = function(itemKey,studentAnswer,correctAnswer){
-            var k=String(itemKey||'');if(/填空|简答|计算|解答|论述|实验|作图|证明|问答/.test(k))return false;
-            if(/单选|多选|选择题|客观|选项/.test(k))return true;
-            var norm=function(s){return String(s||'').trim().replace(/\s+/g,'');};
-            var sa=norm(studentAnswer);if(sa&&/^[A-Ha-h]{1,8}$/.test(sa))return true;
-            var ca=norm(correctAnswer);if(ca&&/^[A-Ha-h]{1,8}$/.test(ca))return true;
+        const isChoice = function(itemKey, studentAnswer, correctAnswer) {
+            var k = String(itemKey || '');
+            if (/填空|简答|计算|解答|论述|实验|作图|证明|问答/.test(k)) return false;
+            if (/单选|多选|选择题|客观|选项/.test(k)) return true;
+            var norm = function(s) { return String(s || '').trim().replace(/\s+/g, ''); };
+            if (norm(studentAnswer) && /^[A-Ha-h]{1,8}$/.test(norm(studentAnswer))) return true;
+            if (norm(correctAnswer) && /^[A-Ha-h]{1,8}$/.test(norm(correctAnswer))) return true;
             return false;
         };
-        var isQuestionStartLine = function(line){
-            if(!line||!String(line).trim())return false;
-            var c=normL(stripMd(line));
-            if(/^第\d{1,3}题/.test(c))return true;
-            if(/^\d{1,3}[\.、．、]\S/.test(c))return true;
-            if(/^[（(]\d{1,3}[）)]\S/.test(c))return true;
-            if(/^\d{1,3}[、,，]\S/.test(c))return true;
-            var t=String(line).trim();
-            if(/^第\s*\d{1,3}\s*题/.test(t))return true;
-            if(/^\d{1,3}\s*[\.\、．]\s*\S/.test(t))return true;
-            if(/^[（(]\d{1,3}[）)]\s*[\.\、．]?\s*\S/.test(t))return true;
-            if(/^\d{1,3}\s*、\s*\S/.test(t))return true;
-            return false;
-        };
-        var isMdSectionHeader = function(line){return line&&/^\s*#{1,6}\s/.test(line);};
-        var getQuestionBounds = function(lines, hitIdx, itemKey){
-            var n=lines.length;
-            var allowCrossPageForSubQuestion=/[（(]\s*\d{1,2}\s*[、,，]\s*\d{1,2}/.test(String(itemKey||''));
-            var parseCompositeMinorList=function(item){var t=String(item||'').replace(/\s+/g,'');var m=t.match(/(\d{1,2})[（(]([\d、,，]+)[）)]/);if(!m)return null;var major=parseInt(m[1],10);var minors=(m[2].match(/\d{1,2}/g)||[]).map(function(x){return parseInt(x,10);}).filter(function(x){return !isNaN(x);});if(!minors.length)return null;return {major:major,minors:Array.from(new Set(minors))};};
-            var cqList=parseCompositeMinorList(itemKey||'');
-            var getMinorMarker=function(lineText,majorOpt){var t=String(lineText||'').trim().replace(/^(\*\*)+|(\*\*)+$/g,'');if(!t)return null;var m=t.match(/^[（(]\s*(\d{1,2})\s*[）)]/);if(m)return {minor:parseInt(m[1],10),majorMatched:false};if(majorOpt!=null){var re=new RegExp('^'+majorOpt+'\\s*[（(]\\s*('+(parseInt(majorOpt)+1)+')\\s*[）)]');m=t.match(re);if(m)return {minor:parseInt(m[1],10),majorMatched:true};}return null;};
-            var multiNums=(function(){var t=String(itemKey||'').trim();if(!t||!/第/.test(t)||!/[、,，]/.test(t))return[];if(/[（(].*[、,，].*[）)]/.test(t))return[];var nums=(t.match(/\d{1,2}/g)||[]).map(function(x){return String(parseInt(x,10));});return Array.from(new Set(nums)).filter(Boolean);})();
-            var cq=parseCompositeQuestionRef(itemKey||'');
-            var start=hitIdx;var foundStart=false;
-            if(multiNums.length>=2){var makeReQC=function(num){return new RegExp('^第'+num+'题|^'+num+'[\\.、．、]');};var firstIdx=-1,lastIdx=-1;for(var i=0;i<n;i++){var t2c=normL(stripMd(lines[i]));if(!t2c)continue;if(firstIdx<0&&makeReQC(multiNums[0]).test(t2c))firstIdx=i;if(makeReQC(multiNums[multiNums.length-1]).test(t2c))lastIdx=i;}if(firstIdx>=0){start=firstIdx;foundStart=true;}if(lastIdx>=0){var mergedEnd=n-1;for(var i=lastIdx+1;i<n;i++){if(isQuestionStartLine(lines[i])||isMdSectionHeader(lines[i])){mergedEnd=i-1;break;}}while(mergedEnd>start&&!String(lines[mergedEnd]||'').trim())mergedEnd--;return {start:start,end:Math.max(start,mergedEnd)};}}
-            if(cq){var reCQ=new RegExp('^'+cq.major+'[\\.、．、]|^第'+cq.major+'题');var tHit=normL(stripMd(lines[hitIdx]));if(reCQ.test(tHit)){start=hitIdx;foundStart=true;}else{for(var i=hitIdx-1;i>=0;i--){var tcq=normL(stripMd(lines[i]));if(reCQ.test(tcq)){start=i;foundStart=true;break;}}}}
-            if(!foundStart){for(var i=hitIdx;i>=0;i--){if(isQuestionStartLine(lines[i])){start=i;foundStart=true;break;}if(isMdSectionHeader(lines[i])){for(var j=i+1;j<=hitIdx;j++){if(isQuestionStartLine(lines[j])){start=j;foundStart=true;break;}}if(!foundStart)start=Math.min(i+1,hitIdx);break;}}}
-            if(!foundStart)start=Math.max(0,hitIdx-45);
-            var end=n-1;var seenRequestedMinors=new Set();
-            for(var i=hitIdx+1;i<n;i++){var Li=lines[i];
-                if(cq){var ti=stripMd(Li);var tic=normL(ti);
-                    if(cqList&&cqList.minors.length>0){var inlineMarkers=Array.from(ti.matchAll(/[（(]\s*(\d{1,2})\s*[）)]/g)).map(function(m){return parseInt(m[1],10);}).filter(function(v){return !isNaN(v)&&v>0;});inlineMarkers.forEach(function(v){if(cqList.minors.indexOf(v)>=0)seenRequestedMinors.add(v);});if(inlineMarkers.some(function(v){return cqList.minors.indexOf(v)<0;})&&(inlineMarkers.some(function(v){return cqList.minors.indexOf(v)>=0;})||seenRequestedMinors.size>0)){end=i-1;break;}}
-                    if(cqList){var mm=getMinorMarker(ti,cqList.major);if(mm&&!isNaN(mm.minor)){if(cqList.minors.indexOf(mm.minor)<0&&mm.minor>0){end=i-1;break;}}}
-                    var sib=ti.match(/^[（(]\s*(\d{1,2})\s*[）)]\s*\S/);if(sib&&+sib[1]>0){if(cqList&&cqList.minors.length>0){if(cqList.minors.indexOf(+sib[1])<0){end=i-1;break;}}else if(+sib[1]!==cq.minor){end=i-1;break;}}
-                    if(cqList){var tiNoSpace=tic;if(new RegExp('^'+(cqList.major+1)+'[\\.、．、]|^第'+(cqList.major+1)+'题').test(tiNoSpace)){end=i-1;break;}var sameMajorSub=tiNoSpace.match(new RegExp('^'+cqList.major+'[（(](\\d{1,2})[）)]'));if(sameMajorSub){var sibNum=parseInt(sameMajorSub[1],10);if(!isNaN(sibNum)&&cqList.minors.indexOf(sibNum)<0){end=i-1;break;}}}
-                    else if(sib&&+sib[1]!==cq.minor&&+sib[1]>0){end=i-1;break;}
-                    if(cqList){var plain=ti.match(/^(\d{1,2})\s*[\\.、．]\s*\S/);if(plain){var pNum=parseInt(plain[1],10);if(!isNaN(pNum)&&cqList.minors.indexOf(pNum)<0&&pNum>0){end=i-1;break;}}}
-                    if(new RegExp('^'+(cq.major+1)+'[\\.、．、]|^第'+(cq.major+1)+'题').test(tic)){end=i-1;break;}
-                }
-                if(isQuestionStartLine(Li)){end=i-1;break;}
-                if(isMdSectionHeader(Li)){if(allowCrossPageForSubQuestion){var j=i+1;while(j<n&&(!String(lines[j]||'').trim()||isMdSectionHeader(lines[j])))j++;if(j<n&&!isQuestionStartLine(lines[j]))continue;}end=i-1;break;}
-            }
-            while(end>start&&!String(lines[end]||'').trim())end--;
-            while(start<end&&!String(lines[start]||'').trim())start++;
-            if(end<start){start=hitIdx;end=Math.min(n-1,hitIdx+35);}
-            var ext=end;for(var i=end+1;i<Math.min(n,end+24);i++){var t=stripMd(lines[i]);if(/^[A-Ha-h][\.、．:：]\s*\S/.test(t)||/^[A-Ha-h]\s*[\.、．:：]\s*\S/.test(t)){ext=i;continue;}if(!t){ext=i;continue;}break;}
-            end=Math.max(end,ext);
-            return {start:start,end:end};
-        };
-        var expandSubjectTokens = function(sub){
-            var s=String(sub||'').trim();if(!s)return[];var out=new Set([s]);
-            if(/道法|道德|法治/.test(s)){['道法','道德与法治','道德','法治','政治','思想品德'].forEach(function(x){out.add(x);});}
-            if(/英语笔试|英文笔试/.test(s)){['英语笔试','英文笔试','英语','英文'].forEach(function(x){out.add(x);});}else if(/听说|听力/.test(s)){['听说','听力','英语听说','英语听力'].forEach(function(x){out.add(x);});}else if(/英语|英文/.test(s)){['英语','英文'].forEach(function(x){out.add(x);});}
-            if(/物理/.test(s))out.add('物理');if(/化学/.test(s))out.add('化学');
-            return Array.from(out).filter(Boolean);
-        };
-        var buildKeywordVariants = function(item,sub){
-            var it=String(item||'').trim();var set=new Set();var add=function(x){var t=String(x||'').trim();if(t)set.add(t);};
-            expandSubjectTokens(sub).forEach(function(s2){if(s2&&it)add(s2+it);if(it){var sp1=it.replace(/([\u4e00-\u9fff])(\d)/g,'$1 $2');var sp2=it.replace(/(\d)([\u4e00-\u9fff])/g,'$1 $2');if(sp1!==it){add(sp1);if(s2)add(s2+sp1);}if(sp2!==it){add(sp2);if(s2)add(s2+sp2);}}});
-            add(it);return Array.from(set).sort(function(a,b){return b.length-a.length;});
-        };
-        var extractQuestionNums = function(item){
-            var cq=parseCompositeQuestionRef(String(item||'').trim());if(cq)return [String(cq.major),String(cq.minor)];
-            var g=String(item||'').match(/\d{1,2}/g);if(!g||!g.length)return[];return Array.from(new Set(g));
-        };
-        var isLikelyExamMetaLine = function(line) {
-            var t = String(line || '').replace(/\s+/g, '');
-            return /考试形式|开卷|注意事项|答题卡|条形码|本试卷共|准考证|不得携带|不得相互|粘贴好条形|考试用时|将姓名|黑白字迹|交回/.test(t);
-        };
-        var findHitLine = function(lines,q){
-            var item=String(q.item||'').trim(),sub=String(q.subjectName||'').trim();
-            var bodyStart=getPdfMarkdownBodyStartLine(lines);
-            var composite=parseCompositeQuestionRef(item);if(composite){var hi=findCompositeHitLine(lines,composite,item,bodyStart);if(hi>=0)return hi;}
-            var variants=buildKeywordVariants(item,sub);
-            var normL2=function(line){return String(line||'').replace(/\s+/g,'');};
-            var normKw=function(kw){return String(kw||'').replace(/\s+/g,'');};
-            for(var vi=0;vi<variants.length;vi++){var kw=variants[vi];if(kw.length<2&&variants.length>1)continue;var nk=normKw(kw);if(nk.length<2&&variants.length>1)continue;
-                for(var i=bodyStart;i<lines.length;i++){var line=lines[i];if(!line)continue;if(line.indexOf(kw)>=0)return i;if(nk.length>=2&&normL2(line).indexOf(nk)>=0)return i;}}
-            var nums=extractQuestionNums(item);
-            var cqNum=parseCompositeQuestionRef(item);
-            if(cqNum&&cqNum.major>=10&&cqNum.minor<=9){nums=nums.filter(function(n){return n!==String(cqNum.minor);});}
-            if(/、/.test(item)||/,/.test(item)){var esc=nums.map(function(n){return String(n).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');});var seqP=esc.join('\\s*[、,，]\\s*');var reM=new RegExp('第?\\s*'+seqP+'\\s*题?');for(var i=bodyStart;i<lines.length;i++){var t3=String(lines[i]||'').trim().replace(/^(\*\*)+|(\*\*)+$/g,'');if(!t3)continue;if(reM.test(t3)&&!isLikelyExamMetaLine(lines[i]))return i;}}
-            for(var ni=0;ni<nums.length;ni++){var num=nums[ni];var reDi=new RegExp('^第\\s*'+num+'\\s*题');var reParen=new RegExp('^[（(]\\s*'+num+'\\s*[）)]\\s*[\\.、．]?');var reHead=new RegExp('^(?:\\*\\s*)+'+num+'\\s*[\\.、．]');var rePlain=new RegExp('^'+num+'\\s*[\\.、．]');var reDiC=new RegExp('^第'+num+'题');var reParenC=new RegExp('^[（(]'+num+'[）)]\\s*[\\.、．]?');var rePlainC=new RegExp('^'+num+'[\\.、．、]');for(var i=bodyStart;i<lines.length;i++){var line=lines[i];if(!line)continue;var t4=String(stripMd(line));var t4c=normL2(t4);if(!(reDi.test(t4)||reParen.test(t4)||reHead.test(t4)||rePlain.test(t4)||reDiC.test(t4c)||reParenC.test(t4c)||rePlainC.test(t4c)||reHead.test(t4c)))continue;if(isLikelyExamMetaLine(line))continue;return i;}}
-            var choiceTag=String(item||'').trim().match(/^(单选|多选|客观(?:题)?|选择题|单项选择|多项选择)(\d{1,3})$/);
-            if(choiceTag){var cqn=choiceTag[2];var reCC1=new RegExp('^第'+cqn+'题');var reCC2=new RegExp('^'+cqn+'[\\.、．、]');var reCC3=new RegExp('^[（(]'+cqn+'[）)]');for(var ic=bodyStart;ic<lines.length;ic++){var Lc=lines[ic];if(!Lc||isLikelyExamMetaLine(Lc))continue;var cc=normL2(stripMd(Lc));if(reCC1.test(cc)||reCC2.test(cc)||reCC3.test(cc))return ic;}}
-            var numHints=[];nums.forEach(function(num2){numHints.push('第'+num2+'题','第 '+num2+' 题','('+num2+')','（'+num2+'）',num2+'、');});
-            for(var hi2=0;hi2<numHints.length;hi2++){var hint=numHints[hi2];var nh=normKw(hint);if(nh.length<2)continue;for(var i=bodyStart;i<lines.length;i++){var line=lines[i];if(!line)continue;if(!isQuestionStartLine(line))continue;if(isLikelyExamMetaLine(line))continue;if(line.indexOf(hint)>=0||normL2(line).indexOf(nh)>=0)return i;}}
-            for(var hi3=0;hi3<numHints.length;hi3++){var hint=numHints[hi3];var nh=normKw(hint);if(nh.length<2)continue;for(var i=bodyStart;i<lines.length;i++){var line=lines[i];if(!line)continue;if(isLikelyExamMetaLine(line))continue;var cc3=normL2(stripMd(line));var pos=cc3.indexOf(nh);if(pos<0)continue;if(!isQuestionStartLine(line)&&pos!==0)continue;return i;}}
-            return -1;
-        };
-        var weakRefsForPdf = function(queries,fileName){
-            var fn=String(fileName||'');var recognizable=/道法|道德|法治|物理|化学|生物|历史|地理|政治|语文|数学|英语|科学/.test(fn);
-            var narrowed=queries.filter(function(q){var tokens=expandSubjectTokens(q.subjectName);var hit=tokens.some(function(t){return t.length>=2&&fn.indexOf(t)>=0;});if(hit)return true;return !recognizable;});
-            if(recognizable)return narrowed;return narrowed.length?narrowed:queries;
-        };
-        var buildSnippetsForPdf = function(markdown,queries){
-            var lines=String(markdown||'').split(/\r?\n/);var snippets=[];var used=new Set();
-            queries.forEach(function(q){var hitIdx=findHitLine(lines,q);if(hitIdx<0)return;var bounds=getQuestionBounds(lines,hitIdx,q.item);var key=bounds.start+':'+bounds.end+':'+q.subjectName+':'+q.item;if(used.has(key))return;used.add(key);var body=lines.slice(bounds.start,bounds.end+1).join('\n').trim();if(!body)return;var choice=isChoiceQuestion(q.item,q.studentAnswer,q.correctAnswer);if(choice&&q.studentAnswer)body+='\n\n**学生作答：** '+q.studentAnswer;var title=q.subjectName+'-'+q.item+'（'+q.scoreNum+'/'+q.maxNum+'，rate='+q.rate+'）';snippets.push('### '+title+'\n\n'+body);});
-            return snippets;
-        };
-
-        // --- Subject-grouped output (preserving original matching logic) ---
         const subjectGroups = {};
-        weakRefs.forEach(q => {
+        weakRefs.forEach(function(q) {
             if (!subjectGroups[q.subjectName]) subjectGroups[q.subjectName] = [];
             subjectGroups[q.subjectName].push(q);
         });
         const subjectParts = [];
         const allPaperMarkdowns = {};
-        Object.entries(subjectGroups).forEach(([subjName, refs]) => {
+        Object.entries(subjectGroups).forEach(function(entry) {
+            var subjName = entry[0], refs = entry[1];
             const pdfParts = [];
-            readyPdfs.forEach(p => {
-                const queriesForPdf = weakRefsForPdf(refs, p.fileName);
-                const snippets = buildSnippetsForPdf(p.markdown, queriesForPdf);
+            var subjectPdfs = readyPdfs.filter(function(p) {
+                if (p.detectedSubject) return pdfSubjectMatches(p.detectedSubject, subjName);
+                return true;
+            });
+            subjectPdfs.forEach(function(p) {
+                var qi = ensurePdfQuestionIndex(p);
+                var lines = p.markdown.split(/\r?\n/);
+                var snippets = [];
+                refs.forEach(function(q) {
+                    var entries = findPdfQuestionEntries(qi, q.item);
+                    if (!entries.length) {
+                        if (window._pmDebug) console.log('Fallback for', q.subjectName, q.item);
+                        var fallbackText = findTextByItemFallback(lines, q.item);
+                        if (fallbackText) {
+                            entries = [{ text: fallbackText }];
+                            if (window._pmDebug) console.log('  -> FALLBACK HIT');
+                        } else {
+                            if (window._pmDebug) console.log('  -> FALLBACK MISS');
+                        }
+                    }
+                    if (!entries.length) return;
+                    entries.forEach(function(entry) {
+                        var body = entry.text;
+                        if (!body) return;
+                        var isChoiceByText = /[（(]\s*[A-D]\s*[）)]|^[A-D][.、．]|^[A-D]\s|选[\s\S]{0,10}题/.test(body);
+                        var isChoiceOverall = isChoice(q.item, q.studentAnswer, q.correctAnswer) || isChoiceByText;
+                        if (isChoiceOverall && q.studentAnswer) {
+                            body += '\n\n**学生作答：** ' + q.studentAnswer;
+                        }
+                        var mtTag = entry.matchType ? ('【' + entry.matchType + '】') : '';
+                        var title = q.subjectName + '-' + q.item + '（' + q.scoreNum + '/' + q.maxNum + '，rate=' + q.rate + '）' + mtTag;
+                        snippets.push('### ' + title + '\n\n' + body);
+                    });
+                });
                 if (snippets.length) {
-                    const key = subjName + '::' + p.fileName;
+                    var key = subjName + '::' + p.fileName;
                     allPaperMarkdowns[key] = snippets.join('\n\n');
                     pdfParts.push('#### 文件：' + p.fileName + '\n\n' + allPaperMarkdowns[key]);
                 }
@@ -2571,7 +3053,7 @@ document.getElementById('subHeaderRows').addEventListener('change', () => { if (
 document.getElementById('pdfFileInput').addEventListener('change', async function(e) {
     const files = Array.from(e.target.files || []).filter(f => /\.(pdf|md)$/i.test(f.name));
     for (const f of files) {
-        const entry = { id: 'pdf_' + Date.now() + '_' + Math.random().toString(16).slice(2), fileName: f.name, markdown: '', status: 'parsing', errorMsg: '' };
+        const entry = { id: 'pdf_' + Date.now() + '_' + Math.random().toString(16).slice(2), fileName: f.name, markdown: '', questionIndex: [], status: 'parsing', errorMsg: '' };
         uploadedPdfs.push(entry); renderPdfList();
         try {
             if (/\.md$/i.test(f.name)) {
@@ -2581,10 +3063,16 @@ document.getElementById('pdfFileInput').addEventListener('change', async functio
                     reader.onerror = function() { reject(new Error('读取MD文件失败')); };
                     reader.readAsText(f);
                 });
+                entry.questionIndex = buildQuestionIndexFromMarkdown(entry.markdown);
+                entry.detectedSubject = detectSubjectByFileName(f.name);
             } else {
-                entry.markdown = await parsePdfToMarkdown(f);
+                var result = await parsePdfToMarkdown(f, function(msg) { document.getElementById('pdfStatusText').textContent = msg; });
+                entry.markdown = result.markdown;
+                entry.questionIndex = result.questionIndex;
+                entry.detectedSubject = result.detectedSubject || detectSubjectByFileName(f.name);
             }
             entry.status = 'ready';
+            delete entry._qi; // invalidate cached index
         } catch(err) { entry.status = 'error'; entry.errorMsg = String(err.message || err); }
         renderPdfList();
     }
@@ -3372,25 +3860,31 @@ function generateBatchComprehensiveReports(className, threshold) {
             if (dirMap[key].students.indexOf(cd.name) < 0) dirMap[key].students.push(cd.name);
         });
     });
-    // Fetch PDF text for each directory item
+    // Fetch PDF text for each directory item (using PdfQuestionIndex)
     var readyPdfs = (uploadedPdfs || []).filter(function(p) { return p && p.status === 'ready' && p.markdown; });
     if (readyPdfs.length) {
         Object.keys(dirMap).forEach(function(key) {
             var di = dirMap[key];
-            readyPdfs.forEach(function(p) {
-                var pdfLines = p.markdown.split(/\r?\n/);
-                var kw = di.item, hi = -1;
-                for (var i = 0; i < pdfLines.length; i++) { if (pdfLines[i] && pdfLines[i].indexOf(kw) >= 0) { hi = i; break; } }
-                if (hi < 0) {
-                    var kw2 = kw.replace(/\s+/g,'');
-                    for (var i = 0; i < pdfLines.length; i++) {
-                        var t2 = String(pdfLines[i]||'').trim().replace(/^(\*\*)+|(\*\*)+$/g,'').replace(/\s+/g,'');
-                        if (t2 && t2.indexOf(kw2) >= 0) { hi = i; break; }
+            var subjectPdfs = readyPdfs.filter(function(p) {
+                if (p.detectedSubject) return pdfSubjectMatches(p.detectedSubject, di.subj);
+                return true;
+            });
+            subjectPdfs.forEach(function(p) {
+                var qi = ensurePdfQuestionIndex(p);
+                var lines = p.markdown.split(/\r?\n/);
+                var entries = findPdfQuestionEntries(qi, di.item);
+                if (entries.length) {
+                    var parts = [];
+                    entries.forEach(function(entry) {
+                        var snippet = qi.getSnippet(entry.number, lines, 2, 8);
+                        if (snippet) {
+                            var mtTag = entry.matchType ? ' *匹配：' + entry.matchType + '*' : '';
+                            parts.push(snippet.text + mtTag);
+                        }
+                    });
+                    if (parts.length) {
+                        di.pdfText = '*来源：' + p.fileName + '*\n' + parts.join('\n\n');
                     }
-                }
-                if (hi >= 0) {
-                    var start = Math.max(0, hi - 2), end = Math.min(pdfLines.length - 1, hi + 8);
-                    di.pdfText = '*来源：' + p.fileName + '*\n' + pdfLines.slice(start, end + 1).join('\n').trim();
                 }
             });
         });
@@ -4222,37 +4716,36 @@ function generateSingleSubjectClassReport(className, subjectName, threshold, tie
         }).join(' ');
     }
 
-    // Helper: extract PDF text for an item
+    // Helper: extract PDF text for an item (using PdfQuestionIndex)
     function extractPdfText(itemName, tierList) {
         var readyPdfs = (uploadedPdfs || []).filter(function(p) { return p && p.status === 'ready' && p.markdown; });
         if (!readyPdfs.length) return null;
-        var subjTokens = [subjectName];
-        if (/道法|道德|法治/.test(subjectName)) subjTokens = ['道法','道德与法治','道德','法治','政治','思想品德'];
-        else if (/英语笔试|英文笔试/.test(subjectName)) subjTokens = ['英语笔试','英文笔试','英语','英文'];
-        else if (/听说|听力/.test(subjectName)) subjTokens = ['听说','听力','英语听说','英语听力'];
-        else if (/英语|英文/.test(subjectName)) subjTokens = ['英语','英文'];
-        else if (/物理/.test(subjectName)) subjTokens = ['物理'];
-        else if (/化学/.test(subjectName)) subjTokens = ['化学'];
         var subjPdfs = readyPdfs.filter(function(p) {
+            if (p.detectedSubject) return pdfSubjectMatches(p.detectedSubject, subjectName);
+            var subjTokens = [subjectName];
+            if (/道法|道德|法治/.test(subjectName)) subjTokens = ['道法','道德与法治','道德','法治','政治','思想品德'];
+            else if (/英语笔试|英文笔试/.test(subjectName)) subjTokens = ['英语笔试','英文笔试','英语','英文'];
+            else if (/听说|听力/.test(subjectName)) subjTokens = ['听说','听力','英语听说','英语听力'];
+            else if (/英语|英文/.test(subjectName)) subjTokens = ['英语','英文'];
+            else if (/物理/.test(subjectName)) subjTokens = ['物理'];
+            else if (/化学/.test(subjectName)) subjTokens = ['化学'];
             return subjTokens.some(function(t) { return t.length >= 2 && p.fileName.indexOf(t) >= 0; });
         });
         if (!subjPdfs.length) return null;
         var outLines = [];
         subjPdfs.forEach(function(p) {
-            var pdfLines = p.markdown.split(/\r?\n/);
-            var kw = itemName, hi = -1;
-            for (var i = 0; i < pdfLines.length; i++) { if (pdfLines[i] && pdfLines[i].indexOf(kw) >= 0) { hi = i; break; } }
-            if (hi < 0) {
-                var kw2 = kw.replace(/\s+/g,'');
-                for (var i = 0; i < pdfLines.length; i++) {
-                    var t2 = String(pdfLines[i]||'').trim().replace(/^(\*\*)+|(\*\*)+$/g,'').replace(/\s+/g,'');
-                    if (t2 && t2.indexOf(kw2) >= 0) { hi = i; break; }
-                }
-            }
-            if (hi < 0) return;
-            var start = Math.max(0, hi - 2), end = Math.min(pdfLines.length - 1, hi + 6);
+            var qi = ensurePdfQuestionIndex(p);
+            var entries = findPdfQuestionEntries(qi, itemName);
+            if (!entries.length) return;
             outLines.push('*来源：' + p.fileName + '*');
-            outLines.push(pdfLines.slice(start, end + 1).join('\n').trim());
+            var texts = [];
+            entries.forEach(function(e) {
+                if (e.text) {
+                    var mtTag = e.matchType ? '（匹配类型：' + e.matchType + '）' : '';
+                    texts.push(e.text + mtTag);
+                }
+            });
+            if (texts.length) outLines.push(texts.join('\n\n'));
             tierList.forEach(function(t) {
                 var dist = fmtAnswers(t, itemName);
                 if (dist) outLines.push(t + '层选项分布：' + dist);
@@ -4398,7 +4891,7 @@ document.getElementById('comprehensiveCopyBtn').addEventListener('click', functi
 });
 
 // ============================================================
-//  各班情况 TAB (adapted from 年级各科分析)
+//  各班区别 TAB (adapted from 年级各科分析)
 // ============================================================
 classDiffEchartsInst = {};
 
@@ -5106,14 +5599,8 @@ document.getElementById('batchStatus').textContent = '⏳ 正在恢复上次数�
 setTimeout(async function() {
     await restoreBatches();
     refreshBatchList();
-    // #region agent log
-    __batchDbg('H1', 'postRestoreBeforeLoad', { currentBatchId: DataPool.currentBatchId, combinedN: combinedStudentData.length, fileEntries: Object.keys(uploadedFilesData).length });
-    // #endregion
     if (DataPool.currentBatchId) {
         loadBatch(DataPool.currentBatchId);
-        // #region agent log
-        __batchDbg('H1', 'postRestoreAfterLoadBatch', { currentBatchId: DataPool.currentBatchId, combinedN: combinedStudentData.length, fileEntries: Object.keys(uploadedFilesData).length });
-        // #endregion
     }
 }, 60);
 </script>
