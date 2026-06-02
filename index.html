@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>学生成绩综合分析系统 (统合版)</title>
+    <title>学情可视化展板</title>
     <script src="echarts.min.js"></script>
     <script src="xlsx.full.min.js"></script>
     <style>
@@ -158,7 +158,7 @@
 </head>
 <body>
 <div class="container">
-    <h1>学生成绩综合分析系统 (统合版)</h1>
+    <h1>学情可视化展板</h1>
 
     <div class="tab-nav">
         <button class="active" data-tab="tab-upload">上传管理</button>
@@ -686,8 +686,35 @@
                 <div class="control-group"><label>科目：</label>
                     <select id="criticalSubjectFilter" class="filter-bar-select" style="max-width:100px;"></select>
                 </div>
-                <div class="control-group"><span>±<input type="number" id="criticalRange" value="5" min="1" max="50" style="width:45px;">分</span></div>
+                <div class="control-group"><span>±<input type="number" id="criticalRange" value="5" min="1" max="50" style="width:45px;">分</span><span style="font-size:11px;color:#888;cursor:help;" title="相对及格线（满分×60%）的分数波动范围。例如数学满分100→及格线60分，±5分即筛选55~65分的学生">ⓘ</span></div>
                 <button class="filter-btn" id="criticalAlertBtn" style="background:#dc2626;">📋 导出名单</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Card 6: 学科关联分析（偏科散点图）新起一行，放在单人诊断下方 -->
+    <div style="margin-top:10px;background:#f5f0ff;border:1px solid #d8b4fe;border-radius:6px;padding:10px 12px;">
+        <div style="font-size:13px;font-weight:bold;color:#7c3aed;margin-bottom:6px;">📊 学科关联分析（偏科散点图）</div>
+        <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;">
+            <div class="control-group"><label>班级：</label>
+                <select id="corrClassFilter" class="filter-bar-select" style="min-width:100px;"></select>
+            </div>
+            <div class="control-group"><label>横轴(X)：</label>
+                <select id="corrXSubject" class="filter-bar-select" style="min-width:80px;"></select>
+            </div>
+            <div class="control-group"><label>纵轴(Y)：</label>
+                <select id="corrYSubject" class="filter-bar-select" style="min-width:80px;"></select>
+            </div>
+            <div class="control-group"><label>均衡阈值(名)：</label>
+                <input type="number" id="corrBalanceThreshold" value="20" min="5" max="500" style="width:55px;padding:4px;border:1px solid #ccc;border-radius:4px;">
+            </div>
+            <button class="filter-btn" id="corrGenerateBtn" style="background:#7c3aed;">📊 生成散点图</button>
+        </div>
+        <div id="corrOutput" style="display:none;margin-top:8px;">
+            <div id="corrInfoBar" style="font-size:12px;color:#555;margin-bottom:4px;padding:4px 8px;background:#faf5ff;border-radius:4px;"></div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                <div style="flex:2;min-width:350px;height:420px;" id="corrScatterChart"></div>
+                <div style="flex:1;min-width:200px;max-height:420px;overflow-y:auto;" id="corrTableContainer"></div>
             </div>
         </div>
     </div>
@@ -4161,6 +4188,62 @@ function refreshComprehensiveTab() {
         });
         subjSel.value = subjList[0] || '';
     }
+    // Populate correlation analysis dropdowns (class + subjects)
+    var populateCorrClass = function() {
+        var sel = document.getElementById('corrClassFilter');
+        if (!sel) return;
+        sel.innerHTML = '';
+        var optAll = document.createElement('option');
+        optAll.value = '__all__'; optAll.textContent = '全部班级'; sel.appendChild(optAll);
+        var clsSet = new Set();
+        combinedStudentData.forEach(function(s) { if (s.class) clsSet.add(s.class); });
+        var clsList = Array.from(clsSet).sort();
+        clsList.forEach(function(c) { var o = document.createElement('option'); o.value = c; o.textContent = c; sel.appendChild(o); });
+        sel.value = '__all__';
+    };
+    populateCorrClass();
+    var populateCorrSubject = function(selId) {
+        var sel = document.getElementById(selId);
+        if (!sel || !combinedStudentData.length) return;
+        sel.innerHTML = '';
+        var subjSet = new Set();
+        combinedStudentData.forEach(function(s) {
+            Object.keys(s.subjects).forEach(function(sn) {
+                var anchorSN2 = getTotalSubjectName(allSubjectHeaders);
+                if (sn !== anchorSN2) subjSet.add(sn);
+            });
+        });
+        var subjList = Array.from(subjSet).sort();
+        subjList.forEach(function(sn) {
+            var o = document.createElement('option');
+            o.value = sn; o.textContent = sn; sel.appendChild(o);
+        });
+        if (subjList.length) sel.value = subjList[0];
+    };
+    populateCorrSubject('corrXSubject');
+    populateCorrSubject('corrYSubject');
+    // Set default Y to second subject if available
+    var ySel = document.getElementById('corrYSubject');
+    if (ySel && ySel.options.length > 1) ySel.selectedIndex = 1;
+    // Sync Y selector when X changes (prevent same subject)
+    var xSel = document.getElementById('corrXSubject');
+    if (xSel && ySel) {
+        xSel.addEventListener('change', function() {
+            if (ySel.value === xSel.value) {
+                var idx = ySel.selectedIndex;
+                if (idx > 0) ySel.selectedIndex = idx - 1;
+                else if (ySel.options.length > 1) ySel.selectedIndex = 1;
+            }
+        });
+        ySel.addEventListener('change', function() {
+            if (xSel.value === ySel.value) {
+                var idx = xSel.selectedIndex;
+                if (idx > 0) xSel.selectedIndex = idx - 1;
+                else if (xSel.options.length > 1) xSel.selectedIndex = 1;
+            }
+        });
+    }
+
     if (!combinedStudentData.length) return;
     var names = Array.from(new Set(combinedStudentData.map(function(s) { return s.name; }))).sort();
     names.forEach(function(n) {
@@ -4571,6 +4654,156 @@ function generateTieredGroupingReport(className, threshold) {
     lines.push('');
 
     return lines.join('\n');
+}
+
+// ============================================================
+//  学科关联分析（偏科散点图）
+// ============================================================
+function renderSubjectCorrelation() {
+    var className = document.getElementById('corrClassFilter').value;
+    var xSubj = document.getElementById('corrXSubject').value;
+    var ySubj = document.getElementById('corrYSubject').value;
+    var balanceThreshold = parseInt(document.getElementById('corrBalanceThreshold').value) || 20;
+    if (!xSubj || !ySubj) { alert('请选择横轴和纵轴科目'); return; }
+    if (xSubj === ySubj) { alert('横轴和纵轴科目不能相同'); return; }
+
+    var students = className === '__all__' ? combinedStudentData : combinedStudentData.filter(function(s) { return String(s.class) === className; });
+    if (!students.length) { alert('所选范围没有学生数据'); return; }
+
+    var dataPoints = [];
+    students.forEach(function(s) {
+        var xSd = s.subjects[xSubj], ySd = s.subjects[ySubj];
+        if (!xSd || !ySd) return;
+        var xRank = parseInt(xSd.gradeRank, 10), yRank = parseInt(ySd.gradeRank, 10);
+        if (isNaN(xRank) || isNaN(yRank) || xRank <= 0 || yRank <= 0) return;
+        dataPoints.push({ name: s.name, x: xRank, y: yRank, diff: yRank - xRank });
+    });
+    if (!dataPoints.length) { alert('所选班级没有学生同时具有两科有效年级排名数据'); return; }
+
+    document.getElementById('corrOutput').style.display = 'block';
+
+    // Max axis range
+    var maxRank = 0;
+    dataPoints.forEach(function(p) { maxRank = Math.max(maxRank, p.x, p.y); });
+    var maxVal = Math.ceil((maxRank + 20) / 10) * 10;
+
+    // Pearson correlation coefficient
+    var n = dataPoints.length, sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0, sumY2 = 0;
+    dataPoints.forEach(function(p) { sumX += p.x; sumY += p.y; sumXY += p.x * p.y; sumX2 += p.x * p.x; sumY2 += p.y * p.y; });
+    var denom = Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
+    var r = denom > 0 ? (n * sumXY - sumX * sumY) / denom : 0;
+    var rText = isNaN(r) ? 'N/A' : r.toFixed(3);
+    var corrDesc = '';
+    if (!isNaN(r)) {
+        var absR = Math.abs(r);
+        corrDesc = (absR >= 0.8 ? '强' : absR >= 0.5 ? '中等' : absR >= 0.3 ? '弱' : '极弱') + (r > 0 ? '正相关' : '负相关');
+    }
+
+    // Split into categories
+    var balanced = [], mild = [], severe = [];
+    dataPoints.forEach(function(p) {
+        var absDiff = Math.abs(p.diff);
+        var entry = { value: [p.x, p.y], name: p.name, diff: p.diff };
+        if (absDiff <= balanceThreshold) balanced.push(entry);
+        else if (absDiff <= balanceThreshold * 2) mild.push(entry);
+        else severe.push(entry);
+    });
+
+    document.getElementById('corrInfoBar').textContent =
+        '人数: ' + n + ' | r = ' + rText + ' (' + corrDesc + ')' +
+        ' | 均衡(≤' + balanceThreshold + '名): ' + balanced.length +
+        ' | 轻微偏科: ' + mild.length + ' | 严重偏科: ' + severe.length;
+
+    // Render chart
+    var chartDiv = document.getElementById('corrScatterChart');
+    if (chartDiv.__chart) try { chartDiv.__chart.dispose(); } catch(e) {}
+    var chart = echarts.init(chartDiv, null, {renderer: 'svg'});
+    chartDiv.__chart = chart;
+
+    var series = [{
+        type: 'scatter', data: [],
+        markLine: {
+            silent: true, symbol: 'none',
+            data: [
+                [{ coord: [0, 0], lineStyle: { color: '#6366f1', type: 'solid', width: 1.5 } },
+                 { coord: [maxVal, maxVal], lineStyle: { color: '#6366f1', type: 'solid', width: 1.5 } }],
+                [{ coord: [0, balanceThreshold], lineStyle: { color: '#22c55e', type: 'dashed', width: 1 } },
+                 { coord: [Math.max(0, maxVal - balanceThreshold), maxVal], lineStyle: { color: '#22c55e', type: 'dashed', width: 1 } }],
+                [{ coord: [balanceThreshold, 0], lineStyle: { color: '#22c55e', type: 'dashed', width: 1 } },
+                 { coord: [maxVal, Math.max(0, maxVal - balanceThreshold)], lineStyle: { color: '#22c55e', type: 'dashed', width: 1 } }]
+            ]
+        },
+        tooltip: { show: false }, legendHoverLink: false, z: 1
+    }];
+
+    function makeSeries(name, data, color) {
+        return {
+            name: name, type: 'scatter', data: data, symbolSize: 11,
+            itemStyle: { color: color }, z: 2,
+            tooltip: {
+                trigger: 'item',
+                formatter: function(params) {
+                    if (!params || !params.data || !params.data.value) return '';
+                    var d = params.data;
+                    var weakSubj = d.diff > 0 ? ySubj : xSubj;
+                    return '<b>' + d.name + '</b><br/>' + xSubj + ': <b>' + d.value[0] + '</b><br/>' + ySubj + ': <b>' + d.value[1] + '</b><br/>偏科指数: ' + (d.diff > 0 ? '+' : '') + d.diff + ' (' + weakSubj + '较弱)';
+                }
+            }
+        };
+    }
+    if (balanced.length) series.push(makeSeries('均衡', balanced, '#22c55e'));
+    if (mild.length) series.push(makeSeries('轻微偏科', mild, '#eab308'));
+    if (severe.length) series.push(makeSeries('严重偏科', severe, '#ef4444'));
+
+    chart.setOption({
+        tooltip: { trigger: 'item' },
+        legend: {
+            data: ['均衡', '轻微偏科', '严重偏科'],
+            top: 0, left: 'center', textStyle: { fontSize: 12 },
+            icon: 'circle', itemWidth: 10, itemHeight: 10
+        },
+        xAxis: {
+            type: 'value', name: xSubj + ' / 年级排名', nameLocation: 'center', nameGap: 35,
+            min: 0, max: maxVal, axisLabel: { fontSize: 11 },
+            nameTextStyle: { fontSize: 13, fontWeight: 'bold' },
+            splitLine: { show: true, lineStyle: { type: 'dashed', color: '#eee' } }
+        },
+        yAxis: {
+            type: 'value', name: ySubj + ' / 年级排名', nameLocation: 'center', nameGap: 40,
+            min: 0, max: maxVal, axisLabel: { fontSize: 11 },
+            nameTextStyle: { fontSize: 13, fontWeight: 'bold' },
+            splitLine: { show: true, lineStyle: { type: 'dashed', color: '#eee' } }
+        },
+        series: series,
+        grid: { left: 65, right: 25, top: 35, bottom: 60 }
+    });
+    chart.resize();
+
+    // Render table: group by weak subject, exclude balanced
+    var yWeak = dataPoints.filter(function(p) { return p.diff > balanceThreshold; }).sort(function(a, b) { return b.diff - a.diff; });
+    var xWeak = dataPoints.filter(function(p) { return p.diff < -balanceThreshold; }).sort(function(a, b) { return a.diff - b.diff; });
+    var html = '<table style="font-size:11px;"><thead><tr><th>姓名</th><th>' + xSubj + '</th><th>' + ySubj + '</th><th>偏科指数</th><th>偏弱科目</th></tr></thead><tbody>';
+    if (yWeak.length) {
+        html += '<tr style="background:#e0e7ff;font-weight:bold;"><td colspan="5">▸ ' + ySubj + '较弱 (' + yWeak.length + '人)</td></tr>';
+        yWeak.forEach(function(p) {
+            var absDiff = Math.abs(p.diff);
+            var bg = absDiff <= balanceThreshold * 2 ? 'style="background:#fef9c3;"' : 'style="background:#fee2e2;"';
+            html += '<tr ' + bg + '><td>' + p.name + '</td><td>' + p.x + '</td><td>' + p.y + '</td><td>+' + p.diff + '</td><td>' + ySubj + '</td></tr>';
+        });
+    }
+    if (xWeak.length) {
+        html += '<tr style="background:#fef3f2;font-weight:bold;"><td colspan="5">▸ ' + xSubj + '较弱 (' + xWeak.length + '人)</td></tr>';
+        xWeak.forEach(function(p) {
+            var absDiff = Math.abs(p.diff);
+            var bg = absDiff <= balanceThreshold * 2 ? 'style="background:#fef9c3;"' : 'style="background:#fee2e2;"';
+            html += '<tr ' + bg + '><td>' + p.name + '</td><td>' + p.x + '</td><td>' + p.y + '</td><td>' + p.diff + '</td><td>' + xSubj + '</td></tr>';
+        });
+    }
+    if (!yWeak.length && !xWeak.length) {
+        html += '<tr><td colspan="5" style="color:#888;text-align:center;">该班级无超出均衡阈值的学生</td></tr>';
+    }
+    html += '</tbody></table>';
+    document.getElementById('corrTableContainer').innerHTML = html;
 }
 
 // Event bindings for comprehensive tab
@@ -5324,6 +5557,9 @@ document.getElementById('criticalCopyBtn').addEventListener('click', function() 
         s.textContent = '已复制！'; setTimeout(function() { s.textContent = ''; }, 3000);
     }
 });
+
+// Correlation scatter plot button
+document.getElementById('corrGenerateBtn').addEventListener('click', renderSubjectCorrelation);
 
 function renderProgressAnalysis(baseBatch, cmpBatch, className) {
     var output = document.getElementById('progressOutput');
