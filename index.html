@@ -710,6 +710,11 @@
                 <div class="control-group"><label>班级：</label>
                     <select id="progressClassFilter" class="filter-bar-select" style="max-width:90px;"></select>
                 </div>
+                <div class="control-group"><label>科目：</label>
+                    <select id="progressSubjectFilter" class="filter-bar-select" style="max-width:90px;">
+                        <option value="__total__">总分</option>
+                    </select>
+                </div>
                 <button class="filter-btn" id="progressBtn" style="background:#16a34a;">📊 生成报告</button>
             </div>
         </div>
@@ -4307,6 +4312,25 @@ function refreshComprehensiveTab() {
             progClsSel.value = prevProgCls;
         }
     }
+    // Populate progress subject filter (with "总分" default)
+    var progSubjSel = document.getElementById('progressSubjectFilter');
+    if (progSubjSel && combinedStudentData.length) {
+        var prevProgSubj = progSubjSel.value;
+        progSubjSel.innerHTML = '<option value="__total__">总分</option>';
+        var totalName = getTotalSubjectName(allSubjectHeaders);
+        var subjSet = new Set();
+        combinedStudentData.forEach(function(s) {
+            Object.keys(s.subjects).forEach(function(sn) {
+                if (sn !== totalName) subjSet.add(sn);
+            });
+        });
+        Array.from(subjSet).sort().forEach(function(sn) {
+            var o = document.createElement('option');
+            o.value = sn; o.textContent = sn; progSubjSel.appendChild(o);
+        });
+        if (prevProgSubj && Array.from(progSubjSel.options).some(function(o) { return o.value === prevProgSubj; }))
+            progSubjSel.value = prevProgSubj;
+    }
     var critSubjSel = document.getElementById('criticalSubjectFilter');
     if (critSubjSel && combinedStudentData.length) {
         critSubjSel.innerHTML = '';
@@ -5705,7 +5729,8 @@ document.getElementById('progressBtn').addEventListener('click', async function(
     var cmpBatch = DataPool.batches.find(function(b) { return b.id === cmpId; });
     if (!baseBatch || !cmpBatch) { await showAlert('未找到选定的批次数据'); return; }
     var className = document.getElementById('progressClassFilter').value || '__all__';
-    renderProgressAnalysis(baseBatch, cmpBatch, className);
+    var subjectName = document.getElementById('progressSubjectFilter').value || '__total__';
+    renderProgressAnalysis(baseBatch, cmpBatch, className, subjectName);
 });
 
 document.getElementById('criticalAlertBtn').addEventListener('click', async function() {
@@ -5750,7 +5775,7 @@ document.getElementById('criticalCopyBtn').addEventListener('click', function() 
 // Correlation scatter plot button
 document.getElementById('corrGenerateBtn').addEventListener('click', async function() { await renderSubjectCorrelation(); });
 
-function renderProgressAnalysis(baseBatch, cmpBatch, className) {
+function renderProgressAnalysis(baseBatch, cmpBatch, className, subjectName) {
     var output = document.getElementById('progressOutput');
     var container = document.getElementById('progressTableContainer');
     if (!output || !container) return;
@@ -5762,16 +5787,20 @@ function renderProgressAnalysis(baseBatch, cmpBatch, className) {
     var filterClass = className === '__all__' || !className ? null : className;
     var baseData = baseBatch.combinedStudentData || [];
     var cmpData = cmpBatch.combinedStudentData || [];
+    var baseDataAll = baseData;
+    var cmpDataAll = cmpData;
     // Filter by class if needed
     if (filterClass) {
         baseData = baseData.filter(function(s) { return normalizeClassName(s.class) === normalizeClassName(filterClass); });
         cmpData = cmpData.filter(function(s) { return normalizeClassName(s.class) === normalizeClassName(filterClass); });
     }
     // Match students by name
-    var totalName = getTotalSubjectName(allSubjectHeaders);
+    var isTotal = !subjectName || subjectName === '__total__';
+    var totalName = isTotal ? getTotalSubjectName(allSubjectHeaders) : subjectName;
+    var subjectDisplay = isTotal ? '总分' : subjectName;
     var baseMap = {}; baseData.forEach(function(s) { baseMap[s.name] = s; });
     var cmpMap = {}; cmpData.forEach(function(s) { cmpMap[s.name] = s; });
-    // Compute rank maps (by total score descending, tie = same rank)
+    // Compute rank maps (by selected subject score descending, tie = same rank)
     function computeRankMap(data) {
         var list = [];
         data.forEach(function(s) {
@@ -5790,8 +5819,8 @@ function renderProgressAnalysis(baseBatch, cmpBatch, className) {
         }
         return rankMap;
     }
-    var baseRankMap = computeRankMap(baseData);
-    var cmpRankMap = computeRankMap(cmpData);
+    var baseRankMap = computeRankMap(baseDataAll);
+    var cmpRankMap = computeRankMap(cmpDataAll);
     // Find common students
     var results = [];
     var baseNames = Object.keys(baseMap);
@@ -5826,7 +5855,7 @@ function renderProgressAnalysis(baseBatch, cmpBatch, className) {
     });
     var classNames = Object.keys(classMap).sort();
     // Build summary table
-    var html = '<h4 style="margin-bottom:8px;">' + escapeHtml(baseBatch.label) + ' → ' + escapeHtml(cmpBatch.label) + '（' + escapeHtml(filterClass ? normalizeClassName(filterClass) : '全部班级') + '，按总分变化）</h4>';
+    var html = '<h4 style="margin-bottom:8px;">' + escapeHtml(baseBatch.label) + ' → ' + escapeHtml(cmpBatch.label) + '（' + escapeHtml(filterClass ? normalizeClassName(filterClass) : '全部班级') + '，按' + subjectDisplay + '变化）</h4>';
     html += '<table><thead><tr><th>班级</th><th>总人数</th><th>进步人数</th><th>退步人数</th><th>持平</th><th>平均进退(分)</th><th>平均进退(名)</th></tr></thead><tbody>';
     classNames.forEach(function(cls) {
         var items = classMap[cls];
@@ -5847,7 +5876,7 @@ function renderProgressAnalysis(baseBatch, cmpBatch, className) {
     // Detail table: top improvers and decliners
     var bLabel = escapeHtml(baseBatch.label), cLabel = escapeHtml(cmpBatch.label);
     html += '<h4 style="margin-top:16px;margin-bottom:8px;">进步最大 TOP5</h4>';
-    html += '<table><thead><tr><th>排名</th><th>班级</th><th>姓名</th><th>' + bLabel + '总分(名)</th><th>' + cLabel + '总分(名)</th><th>成绩变化</th><th>名次变化</th></tr></thead><tbody>';
+    html += '<table><thead><tr><th>排名</th><th>班级</th><th>姓名</th><th>' + bLabel + subjectDisplay + '(名)</th><th>' + cLabel + subjectDisplay + '(名)</th><th>成绩变化</th><th>名次变化</th></tr></thead><tbody>';
     var improved = results.filter(function(r) { return r.diff > 0; }).slice(0, 5);
     improved.forEach(function(r, i) {
         var rankChange = typeof r.rankDiff === 'number' ? (r.rankDiff > 0 ? '↑' + r.rankDiff : (r.rankDiff < 0 ? '↓' + Math.abs(r.rankDiff) : '→0')) : '-';
@@ -5855,7 +5884,7 @@ function renderProgressAnalysis(baseBatch, cmpBatch, className) {
     });
     html += '</tbody></table>';
     html += '<h4 style="margin-top:16px;margin-bottom:8px;">退步最大 TOP5</h4>';
-    html += '<table><thead><tr><th>排名</th><th>班级</th><th>姓名</th><th>' + bLabel + '总分(名)</th><th>' + cLabel + '总分(名)</th><th>成绩变化</th><th>名次变化</th></tr></thead><tbody>';
+    html += '<table><thead><tr><th>排名</th><th>班级</th><th>姓名</th><th>' + bLabel + subjectDisplay + '(名)</th><th>' + cLabel + subjectDisplay + '(名)</th><th>成绩变化</th><th>名次变化</th></tr></thead><tbody>';
     var declined = results.filter(function(r) { return r.diff < 0; }).slice(0, 5);
     declined.forEach(function(r, i) {
         var rankChange = typeof r.rankDiff === 'number' ? (r.rankDiff > 0 ? '↑' + r.rankDiff : (r.rankDiff < 0 ? '↓' + Math.abs(r.rankDiff) : '→0')) : '-';
@@ -5864,8 +5893,9 @@ function renderProgressAnalysis(baseBatch, cmpBatch, className) {
     html += '</tbody></table>';
     // Full detail table (collapsible)
     html += '<details style="margin-top:16px;"><summary><b>查看全部学生进退步明细</b></summary>';
-    html += '<div class="scroll-container" style="max-height:400px;"><table><thead><tr><th>班级</th><th>姓名</th><th>' + bLabel + '总分(名)</th><th>' + cLabel + '总分(名)</th><th>成绩变化</th><th>名次变化</th><th>趋势</th></tr></thead><tbody>';
-    results.forEach(function(r) {
+    html += '<div class="scroll-container" style="max-height:400px;"><table><thead><tr><th>班级</th><th>姓名</th><th>' + bLabel + subjectDisplay + '(名)</th><th>' + cLabel + subjectDisplay + '(名)</th><th>成绩变化</th><th>名次变化</th><th>趋势</th></tr></thead><tbody>';
+    var detailResults = [].concat(results).sort(function(a, b) { return (b.rankDiff || 0) - (a.rankDiff || 0); });
+    detailResults.forEach(function(r) {
         var trend = r.diff > 0 ? '↑进步' : (r.diff < 0 ? '↓退步' : '→持平');
         var trendColor = r.diff > 0 ? '#16a34a' : (r.diff < 0 ? '#dc2626' : '#666');
         var rankChange = typeof r.rankDiff === 'number' ? (r.rankDiff > 0 ? '↑' + r.rankDiff : (r.rankDiff < 0 ? '↓' + Math.abs(r.rankDiff) : '→0')) : '-';
