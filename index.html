@@ -213,17 +213,6 @@
             </div>
         </div>
     </div>
-    <div id="toastContainer" class="toast"></div>
-    <div id="modalOverlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.4);z-index:10000;align-items:center;justify-content:center;">
-        <div id="modalBox" style="background:#fff;border-radius:8px;padding:20px;max-width:420px;min-width:280px;box-shadow:0 4px 20px rgba(0,0,0,.3);text-align:center;">
-            <div id="modalMessage" style="font-size:15px;margin-bottom:16px;color:#333;"></div>
-            <div id="modalActions" style="display:flex;gap:10px;justify-content:center;">
-                <button id="modalCancelBtn" style="padding:6px 18px;border-radius:4px;border:1px solid #ccc;background:#f5f5f5;cursor:pointer;font-size:14px;">取消</button>
-                <button id="modalConfirmBtn" style="padding:6px 18px;border-radius:4px;border:none;background:#e74c3c;color:#fff;cursor:pointer;font-size:14px;">确定</button>
-            </div>
-        </div>
-    </div>
-
     <details style="margin-bottom:16px;">
         <summary style="cursor:pointer;font-weight:bold;color:#2c3e50;">各科满分设置</summary>
         <div style="display:flex;gap:8px;flex-wrap:wrap;padding:8px;background:#f9f9f9;border-radius:5px;margin-top:4px;">
@@ -796,6 +785,16 @@
 
     <div class="no-data" id="comprehensivePlaceholder">请搜索学生姓名，设置薄弱阈值后点击「生成综合诊断报告」</div>
 </div>
+    <div id="toastContainer" class="toast"></div>
+    <div id="modalOverlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.4);z-index:10000;align-items:center;justify-content:center;">
+        <div id="modalBox" style="background:#fff;border-radius:8px;padding:20px;max-width:420px;min-width:280px;box-shadow:0 4px 20px rgba(0,0,0,.3);text-align:center;">
+            <div id="modalMessage" style="font-size:15px;margin-bottom:16px;color:#333;"></div>
+            <div id="modalActions" style="display:flex;gap:10px;justify-content:center;">
+                <button id="modalCancelBtn" style="padding:6px 18px;border-radius:4px;border:1px solid #ccc;background:#f5f5f5;cursor:pointer;font-size:14px;">取消</button>
+                <button id="modalConfirmBtn" style="padding:6px 18px;border-radius:4px;border:none;background:#e74c3c;color:#fff;cursor:pointer;font-size:14px;">确定</button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -2197,6 +2196,7 @@ function expandSubjectFullMarks(base) {
     const b = base && typeof base === 'object' ? { ...base } : {}, out = { ...b };
     const from = (a,c) => { if (out[a]==null && b[c]!=null) out[a]=b[c]; };
     from('道德与法治','道法'); from('思想政治','道法'); from('政治','道法'); from('思想品德','道法'); from('法治与社会','道法');
+    from('英语听说','听说'); from('英语听力','听说'); from('听力','听说');
     if (out['英语']==null && b['英语笔试']!=null && b['听说']!=null) out['英语']=b['英语笔试']+b['听说'];
     return out;
 }
@@ -5046,7 +5046,6 @@ document.getElementById('comprehensiveBatchBtn').addEventListener('click', async
     var threshold = parseFloat(document.getElementById('comprehensiveThreshold').value) || 0.6;
     var students = combinedStudentData.filter(function(s) { return String(s.class) === className; });
     if (!students.length) { await showAlert('该班级没有学生数据'); return; }
-    if (!await showConfirm('即将为「' + className + '」生成 ' + students.length + ' 份报告，可能需要数秒。\n\n报告将以 Markdown 格式输出，请在 DeepSeek 中粘贴分析。是否继续？')) return;
     var report = generateBatchComprehensiveReports(className, threshold);
     if (!report) { await showAlert('生成失败，请检查数据'); return; }
     document.getElementById('comprehensivePlaceholder').style.display = 'none';
@@ -5061,7 +5060,6 @@ document.getElementById('comprehensiveGroupingBtn').addEventListener('click', as
     var threshold = parseFloat(document.getElementById('comprehensiveThreshold').value) || 0.6;
     var students = combinedStudentData.filter(function(s) { return String(s.class) === className; });
     if (!students.length) { await showAlert('该班级没有学生数据'); return; }
-    if (!await showConfirm('即将为「' + className + '」生成分层教学分组数据（纯数据表格，约500行）。\n\n复制后可粘贴至 DeepSeek 等 AI 工具进行详细分层分析。是否继续？')) return;
     var report = generateTieredGroupingReport(className, threshold);
     if (!report) { await showAlert('生成失败，请检查数据'); return; }
     document.getElementById('comprehensivePlaceholder').style.display = 'none';
@@ -5667,8 +5665,6 @@ document.getElementById('comprehensiveSubjBtn').addEventListener('click', async 
     if (!subjectName) { await showAlert('请先选择科目'); return; }
     var students = combinedStudentData.filter(function(s) { return String(s.class) === className; });
     if (!students.length) { await showAlert('该班级没有学生数据'); return; }
-    var modeLabel = tierMode === 'grade' ? '等级分层' : '排名分层';
-    if (!await showConfirm('即将为「' + className + ' — ' + subjectName + '」生成单科分析报告（' + modeLabel + '）。是否继续？')) return;
     var report = generateSingleSubjectClassReport(className, subjectName, threshold, tierMode);
     if (!report) { await showAlert('生成失败，请检查数据'); return; }
     document.getElementById('comprehensivePlaceholder').style.display = 'none';
@@ -5682,7 +5678,6 @@ document.getElementById('comprehensiveSeatingBtn').addEventListener('click', asy
     var className = document.getElementById('comprehensiveClassFilter').value;
     var students = combinedStudentData.filter(function(s) { return String(s.class) === className; });
     if (!students.length) { await showAlert('该班级没有学生数据'); return; }
-    if (!await showConfirm('即将为「' + className + '」生成座位分析方案（4种策略对比 + 学生档案）。\n\n复制后可粘贴至 DeepSeek 进行最终排座决策。是否继续？')) return;
     var report = generateSeatingReport(className);
     if (!report) { await showAlert('生成失败'); return; }
     document.getElementById('comprehensivePlaceholder').style.display = 'none';
