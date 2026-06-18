@@ -7,6 +7,10 @@
     <script src="echarts.min.js"></script>
     <script src="xlsx.full.min.js"></script>
     <script>if(typeof echarts==='undefined'){var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js';document.head.appendChild(s)}if(typeof XLSX==='undefined'){var s2=document.createElement('script');s2.src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';document.head.appendChild(s2)}</script>
+    <link rel="stylesheet" href="katex.min.css">
+    <script src="marked.min.js"></script>
+    <script src="katex.min.js"></script>
+    <script src="auto-render.min.js"></script>
     <style>
         /* ── Design System ──────────────────────────── */
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -466,6 +470,31 @@
     #tab-seating .sb-card{transition:box-shadow .2s ease;}
     #tab-seating .sb-card:hover{box-shadow:var(--seating-shadow-lg);}
     @keyframes seatingFadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+    /* ── Markdown 渲染样式（错题本） ─────────── */
+    .markdown-body {
+        font-size: 13px;
+        line-height: 1.8;
+        color: #374151;
+    }
+    .markdown-body img {
+        max-width: min(100%, 400px);
+        max-height: 400px;
+        width: auto;
+        height: auto;
+        object-fit: contain;
+        display: block;
+        margin: 10px auto;
+        border-radius: 4px;
+    }
+    .markdown-body p {
+        margin-bottom: 8px;
+    }
+    .markdown-body .katex-display {
+        margin: 8px 0;
+        overflow-x: auto;
+        overflow-y: hidden;
+    }
     </style>
 </head>
 <body>
@@ -498,7 +527,7 @@
 
     <div class="upload-area-container">
         <div class="upload-section">
-            <h3>主分区 — 总分及各科排名表 (必选)</h3>
+            <h3>总成绩表</h3>
             <button class="upload-btn" onclick="document.getElementById('mainFileInput').click()">选择总表文件</button>
             <button class="upload-btn" onclick="downloadMainTemplate()" style="background:#27ae60;">📥 下载模板</button>
             <input type="file" id="mainFileInput" class="file-input" accept=".xlsx,.xls,.csv" multiple>
@@ -507,7 +536,7 @@
             <ul class="file-list" id="mainFileList"></ul>
         </div>
         <div class="upload-section sub">
-            <h3>子分区 — 小题得分表 (可选)</h3>
+            <h3>小题得分表 (可选)</h3>
             <button class="upload-btn" onclick="document.getElementById('subFileInput').click()" style="background:#f39c12;">选择小题表文件</button>
             <input type="file" id="subFileInput" class="file-input" accept=".xlsx,.xls,.csv" multiple>
             <span style="margin:0 6px;font-size:13px;">表头行数：</span>
@@ -515,13 +544,14 @@
             <ul class="file-list" id="subFileList"></ul>
         </div>
         <div class="upload-section pdf">
-            <h3>PDF/Markdown分区 — 试卷文档 (可选)</h3>
+            <h3>试卷文档(可选)</h3>
             <button class="upload-btn" onclick="document.getElementById('pdfFileInput').click()" style="background:#9b59b6;">选择PDF/MD试卷</button>
             <input type="file" id="pdfFileInput" class="file-input" accept=".pdf,.md" multiple>
             <div id="pdfStatusText" style="font-size:12px;margin-top:5px;color:#888;">未上传PDF</div>
             <ul class="file-list" id="pdfFileList"></ul>
             <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">
                 <button class="upload-btn small" onclick="refreshAllPdfAnalyses()" style="background:#2ecc71;" title="重新运行个人分析、集体分析等模块以应用科目变更">🔄 刷新分析</button>
+                <button class="upload-btn small" onclick="reparseAllPdfsMinerU()" style="background:#0ea5e9;" title="通过本地 Python 服务重新提交 PDF 到 MinerU 轻量解析">🔄 重新解析（MinerU）</button>
             </div>
         </div>
     </div>
@@ -536,6 +566,8 @@
                 <select id="pdfParseMode" style="padding:4px 8px;border-radius:4px;border:1px solid #ccc;font-size:13px;">
                     <option value="fast">🔵 快速模式（纯文本提取）</option>
                     <option value="precise">🟣 精准模式（AI视觉识别）</option>
+                    <option value="mineru">⚡ MinerU 轻量解析（需本地服务）</option>
+                    <option value="mineru_precise">🧩 MinerU 精准解析（Token+图片嵌入）</option>
                 </select>
             </label>
             <label style="display:flex;align-items:center;gap:4px;font-size:13px;font-weight:600;">
@@ -1006,89 +1038,104 @@
                 <div class="comp-card-header">👥 群体分析</div>
                 <div class="comp-card-controls">
                     <div class="control-group"><label>班级：</label>
-                        <select id="comprehensiveClassFilter" class="filter-bar-select" style="width:90px;"></select>
+                        <select id="comprehensiveClassFilter" class="filter-bar-select" style="width:70px;"></select>
                     </div>
-                    <button class="filter-btn" id="comprehensiveBatchBtn" style="background:#d97706;">📦 全班</button>
-                    <button class="filter-btn" id="comprehensiveGroupingBtn" style="background:#7c3aed;">📊 分层</button>
-                    <button class="filter-btn" id="comprehensiveSeatingBtn" style="background:#059669;">🪑 座位</button>
+                    <div style="display:flex;gap:4px;flex-wrap:nowrap;">
+                        <button class="filter-btn" id="comprehensiveBatchBtn" style="background:#d97706;">📦 全班</button>
+                        <button class="filter-btn" id="comprehensiveGroupingBtn" style="background:#7c3aed;">📊 分层</button>
+                        <button class="filter-btn" id="comprehensiveSeatingBtn" style="background:#0891b2;">🪑 座位</button>
+                    </div>
                 </div>
             </div>
 
             <!-- Card 3: 单科分析 -->
             <div class="comp-card" data-comp="subject">
                 <div class="comp-card-header">📐 单科分析</div>
-                <div class="comp-card-controls">
-                    <div class="control-group" style="flex-wrap:wrap;align-items:flex-start;">
-                        <label style="margin-top:4px;">班级：</label>
-                        <div id="comprehensiveSubjClassChips" style="display:flex;flex-wrap:wrap;gap:4px;"></div>
+                <div class="comp-card-controls" style="flex-direction:column;align-items:stretch;">
+                    <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;">
+                        <div class="control-group" style="flex-wrap:wrap;align-items:flex-start;">
+                            <label style="margin-top:4px;">班级：</label>
+                            <div id="comprehensiveSubjClassChips" style="display:flex;flex-wrap:wrap;gap:4px;"></div>
+                        </div>
+                        <div class="control-group"><label>科目：</label>
+                            <select id="comprehensiveSubjFilter" class="filter-bar-select" style="width:80px;"></select>
+                        </div>
+                        <div class="control-group"><label>分层：</label>
+                            <select id="comprehensiveSubjTierMode" class="filter-bar-select" style="width:60px;">
+                                <option value="grade">等级</option>
+                                <option value="rank">排名</option>
+                            </select>
+                        </div>
+                        <div class="control-group"><label>对比：</label>
+                            <select id="comprehensiveSubjCompareBatch" class="filter-bar-select" style="max-width:100px;">
+                                <option value="">仅本次（无对比）</option>
+                            </select>
+                        </div>
                     </div>
-                    <div class="control-group"><label>科目：</label>
-                        <select id="comprehensiveSubjFilter" class="filter-bar-select" style="width:80px;"></select>
-                    </div>
-                    <div class="control-group"><label>分层：</label>
-                        <select id="comprehensiveSubjTierMode" class="filter-bar-select" style="width:60px;">
-                            <option value="rank">排名</option>
-                            <option value="grade">等级</option>
-                        </select>
-                    </div>
-                    <button class="filter-btn" id="comprehensiveSubjBtn" style="background:#ca8a04;">📊 生成</button>
+                    <button class="filter-btn" id="comprehensiveSubjBtn" style="align-self:flex-end;">📊 生成</button>
                 </div>
             </div>
 
             <!-- Card 4: 进退步量化统计 -->
             <div class="comp-card" data-comp="progress">
                 <div class="comp-card-header">📈 进退步量化统计</div>
-                <div class="comp-card-controls" style="gap:3px;">
-                    <div class="control-group"><label>基准：</label>
-                        <select id="progressBaseBatch" class="filter-bar-select" style="max-width:100px;"></select>
+                <div class="comp-card-controls" style="flex-direction:column;align-items:stretch;">
+                    <div style="display:flex;flex-wrap:wrap;gap:3px;align-items:center;">
+                        <div class="control-group"><label>基准：</label>
+                            <select id="progressBaseBatch" class="filter-bar-select" style="max-width:100px;"></select>
+                        </div>
+                        <div class="control-group"><label>对比：</label>
+                            <select id="progressCompareBatch" class="filter-bar-select" style="max-width:100px;"></select>
+                        </div>
+                        <div class="control-group"><label>班级：</label>
+                            <select id="progressClassFilter" class="filter-bar-select" style="max-width:70px;"></select>
+                        </div>
+                        <div class="control-group"><label>科目：</label>
+                            <select id="progressSubjectFilter" class="filter-bar-select" style="max-width:70px;">
+                                <option value="__total__">总分</option>
+                            </select>
+                        </div>
                     </div>
-                    <div class="control-group"><label>对比：</label>
-                        <select id="progressCompareBatch" class="filter-bar-select" style="max-width:100px;"></select>
-                    </div>
-                    <div class="control-group"><label>班级：</label>
-                        <select id="progressClassFilter" class="filter-bar-select" style="max-width:70px;"></select>
-                    </div>
-                    <div class="control-group"><label>科目：</label>
-                        <select id="progressSubjectFilter" class="filter-bar-select" style="max-width:70px;">
-                            <option value="__total__">总分</option>
-                        </select>
-                    </div>
-                    <button class="filter-btn" id="progressBtn" style="background:#047857;">📊 生成</button>
+                    <button class="filter-btn" id="progressBtn" style="align-self:flex-end;">📊 生成</button>
                 </div>
             </div>
 
             <!-- Card 5: 临界生预警 -->
             <div class="comp-card" data-comp="critical">
                 <div class="comp-card-header">⚠️ 临界生预警</div>
-                <div class="comp-card-controls">
-                    <div class="control-group"><label>班级：</label>
-                        <select id="criticalClassFilter" class="filter-bar-select" style="max-width:80px;"></select>
+                <div class="comp-card-controls" style="flex-direction:column;align-items:stretch;">
+                    <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;">
+                        <div class="control-group"><label>班级：</label>
+                            <select id="criticalClassFilter" class="filter-bar-select" style="max-width:80px;"></select>
+                        </div>
+                        <div class="control-group"><label>科目：</label>
+                            <select id="criticalSubjectFilter" class="filter-bar-select" style="max-width:80px;"></select>
+                        </div>
+                        <div class="control-group"><span>±<input type="number" id="criticalRange" value="5" min="1" max="50" style="width:40px;">分</span><span style="font-size:10px;color:#888;cursor:help;" title="相对及格线（满分×60%）的分数波动范围">ⓘ</span></div>
                     </div>
-                    <div class="control-group"><label>科目：</label>
-                        <select id="criticalSubjectFilter" class="filter-bar-select" style="max-width:80px;"></select>
-                    </div>
-                    <div class="control-group"><span>±<input type="number" id="criticalRange" value="5" min="1" max="50" style="width:40px;">分</span><span style="font-size:10px;color:#888;cursor:help;" title="相对及格线（满分×60%）的分数波动范围">ⓘ</span></div>
-                    <button class="filter-btn" id="criticalAlertBtn" style="background:#b91c1c;">📋 导出</button>
+                    <button class="filter-btn" id="criticalAlertBtn" style="align-self:flex-end;">📊 生成</button>
                 </div>
             </div>
 
             <!-- Card 6: 学科关联分析 -->
             <div class="comp-card" data-comp="correlation">
                 <div class="comp-card-header">📊 学科关联分析（偏科散点图）</div>
-                <div class="comp-card-controls">
-                    <div class="control-group"><label>班级：</label>
-                        <select id="corrClassFilter" class="filter-bar-select" style="width:80px;"></select>
+                <div class="comp-card-controls" style="flex-direction:column;align-items:stretch;">
+                    <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;">
+                        <div class="control-group"><label>班级：</label>
+                            <select id="corrClassFilter" class="filter-bar-select" style="width:80px;"></select>
+                        </div>
+                        <div class="control-group"><label>X：</label>
+                            <select id="corrXSubject" class="filter-bar-select" style="width:70px;"></select>
+                        </div>
+                        <div class="control-group"><label>Y：</label>
+                            <select id="corrYSubject" class="filter-bar-select" style="width:70px;"></select>
+                        </div>
+                        <div class="control-group"><label>阈值：</label>
+                            <input type="number" id="corrBalanceThreshold" value="20" min="5" max="500" style="width:45px;padding:3px;border:1px solid var(--border);border-radius:4px;">
+                        </div>
                     </div>
-                    <div class="control-group"><label>X：</label>
-                        <select id="corrXSubject" class="filter-bar-select" style="width:70px;"></select>
-                    </div>
-                    <div class="control-group"><label>Y：</label>
-                        <select id="corrYSubject" class="filter-bar-select" style="width:70px;"></select>
-                    </div>
-                    <div class="control-group"><label>阈值：</label>
-                        <input type="number" id="corrBalanceThreshold" value="20" min="5" max="500" style="width:45px;padding:3px;border:1px solid var(--border);border-radius:4px;">
-                    </div>
-                    <button class="filter-btn" id="corrGenerateBtn" style="background:#7c3aed;">📊 生成</button>
+                    <button class="filter-btn" id="corrGenerateBtn" style="align-self:flex-end;">📊 生成</button>
                 </div>
             </div>
         </div>
@@ -1237,11 +1284,23 @@ function persistBatches() {
                 var fe = b.uploadedFilesData[k];
                 ufd[k] = { fileName: fe.fileName, fileType: fe.fileType, studentData: fe.studentData, subjectHeaders: fe.subjectHeaders, headerRows: fe.headerRows };
             });
+            var pdfs = (b.uploadedPdfs || []).map(function(p) {
+                var copy = Object.assign({}, p);
+                if (copy.fileData) {
+                    var binary = '';
+                    var bytes = copy.fileData;
+                    for (var i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+                    copy.fileDataB64 = btoa(binary);
+                    delete copy.fileData;
+                }
+                delete copy._qi;
+                return copy;
+            });
             return {
                 id: b.id, label: b.label, createdAt: b.createdAt,
                 combinedStudentData: b.combinedStudentData,
                 allSubjectHeaders: b.allSubjectHeaders,
-                uploadedPdfs: b.uploadedPdfs,
+                uploadedPdfs: pdfs,
                 uploadedFilesData: ufd
             };
         });
@@ -1427,22 +1486,35 @@ const VISION_PROVIDERS = {
     glm: {
         name: '智谱 GLM',
         baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
-        models: ['glm-4v'],
-        defaultModel: 'glm-4v',
+        models: ['glm-4.5v', 'glm-4.6v', 'glm-4.1v-thinking-flashx'],
+        defaultModel: 'glm-4.5v',
         free: false,
         registerUrl: 'https://open.bigmodel.cn',
-        note: '需注册获取 API Key'
+        note: '需注册获取 API Key',
+        defaultKey: '71d5d8ba103341e5aa29ca61a3ce2056.uwfUkIkInmiRrR9n'
+    },
+    kimi: {
+        name: '月之暗面 Kimi',
+        baseUrl: 'https://api.moonshot.cn/v1',
+        models: ['kimi-k2.6', 'kimi-k2.5', 'moonshot-v1-32k-vision-preview'],
+        defaultModel: 'kimi-k2.6',
+        free: false,
+        registerUrl: 'https://platform.moonshot.ai',
+        note: 'K2系列支持视觉理解，需注册获取 API Key',
+        defaultKey: 'sk-O0s87idpUocaTLIhldEMmdM1CfAkGfRwENXHWI9B0hoYl8vg'
     }
 };
 
-const VISION_PROMPT = '你是一个专业的理科试卷识别专家。请将这张试卷图片准确转换为标准 Markdown 格式。\n\n要求：\n1. 严格保留题号结构（如 1. (1) ② 等编号）\n2. 所有数学和物理公式必须用 LaTeX 表示：行内用 $...$，独立公式用 $$...$$\n3. 遇到图片（电路图、受力分析图、几何图形、函数图像等）用 [图片：简要描述图片内容] 占位\n4. 文字、数字、符号全部保留，不要遗漏任何内容\n5. 直接输出 Markdown，不要任何额外说明或问候语';
+const VISION_PROMPT = '你是一个专业的理科试卷识别专家。请将这张试卷图片准确转换为标准 Markdown 格式。\n\n要求：\n1. 严格保留题号结构（如 1. (1) ① ② 等编号），不要合并或重编号\n2. 所有数学和物理公式必须用 LaTeX 表示：\n   - 行内公式用 $...$，独立公式用 $$...$$\n   - 下标用 $_{n}$，如 R₁ → $R_1$\n   - 上标用 $^{n}$，如 m² → $m^2$\n   - 单位符号与数值之间加空格，如 10 Ω、0.6 A、50 Ω 1 A\n3. 遇到电路图（含电路图和实物接线图），必须详细描述：\n   - 列出所有元件及其标注值（电阻、开关、电表、电源、滑动变阻器等）\n   - 说明元件之间的连接方式和电流路径\n4. 遇到函数图像/图表，必须：\n   - 描述X轴和Y轴的物理量及单位及刻度范围\n   - 读出关键点的精确坐标值\n   - 描述曲线/数据点的变化趋势\n   - 利用网格线精确读数\n5. 遇到数据表格，必须保留完整的行列结构，不要合并或省略任何单元格\n6. 遇到填空题（▲标记），保留 ▲ 符号，不要替换或省略\n7. 遇到多列选项（如ABCD排成2列），必须逐行扫描，先读左列再读右列：\n   例如：A. xxx    B. xxx\n        C. xxx    D. xxx\n   识别为完整4个选项，不要遗漏右列\n8. 遇到实验器材列表，保留完整的参数格式（如"滑动变阻器（50 Ω 1 A）"）\n9. 文字、数字、符号全部保留，不要遗漏任何内容\n10. 直接输出 Markdown，不要任何额外说明或问候语\n\n-----\n参照示例（请严格遵循以下格式输出）：\n\n示例1 — 多列选项（选项排成两列时，必须逐行读出左右两列）：\n图片显示：\n第一行左：A. 水平向前匀速飞行    第一行右：B. 竖直向下匀速飞行\n第二行左：C. 斜向上匀速飞行      第二行右：D. 斜向下匀速飞行\n\n你应该输出：\nA. 水平向前匀速飞行\nB. 竖直向下匀速飞行\nC. 斜向上匀速飞行\nD. 斜向下匀速飞行\n\n示例2 — 电路图描述：\n图片显示一个电路图，包含电源（6V）、开关S、定值电阻R₁（10Ω）、电流表A（串联）、电压表V（并联在R₁两端）、滑动变阻器R₂（最大50Ω）。\n\n你应该输出：\n电源（6V）正极连接开关S，开关S连接定值电阻R₁（10Ω），R₁另一端连接电流表A正极，电流表A负极连接滑动变阻器R₂滑片，R₂另一端回到电源负极。电压表V并联在R₁两端。\n\n示例3 — 函数图像读数：\n图片显示I-U坐标系，X轴为U/V（0~6V，每格1V），Y轴为I/A（0~0.6A，每格0.1A）。图像为一条过原点的直线，经过点(2V, 0.2A)、(4V, 0.4A)。\n\n你应该输出：\nI-U图像（线性）：X轴为U/V，Y轴为I/A。图像为过原点的直线，经过点(2, 0.2)、(4, 0.4)，斜率0.1，表明电阻为10Ω。';
 
 // Default API key (pre-filled for immediate use in precise mode)
 const DEFAULT_VISION_CONFIG = {
-    provider: 'siliconflow',
-    model: 'Qwen/Qwen3-Omni-30B-A3B-Instruct',
-    apiKey: 'sk-rduqygntsljwlojefikgkivbkgeijzinhmbffrkmlsylbjbu'
+    provider: 'glm',
+    model: 'glm-4.5v',
+    apiKey: '71d5d8ba103341e5aa29ca61a3ce2056.uwfUkIkInmiRrR9n'
 };
+
+const MINERU_API_BASE = String(window.MINERU_API_BASE || localStorage.getItem('mineruApiBase') || 'http://127.0.0.1:8765').replace(/\/+$/, '');
 
 // Vision config persistence
 function saveVisionConfig() {
@@ -1450,7 +1522,8 @@ function saveVisionConfig() {
         provider: document.getElementById('visionProvider').value,
         model: document.getElementById('visionModel').value,
         apiKey: document.getElementById('visionApiKey').value,
-        mode: document.getElementById('pdfParseMode').value
+        mode: document.getElementById('pdfParseMode').value,
+        mineruDefaultVersion: 1
     };
     try { localStorage.setItem('visionConfig', JSON.stringify(cfg)); } catch(e) {}
 }
@@ -1463,8 +1536,12 @@ function loadVisionConfig() {
             cfg.provider = DEFAULT_VISION_CONFIG.provider;
         }
         if (!cfg.model) cfg.model = DEFAULT_VISION_CONFIG.model;
-        if (!cfg.apiKey) cfg.apiKey = DEFAULT_VISION_CONFIG.apiKey;
-        if (!cfg.mode || ['fast','precise'].indexOf(cfg.mode) < 0) cfg.mode = 'fast';
+        if (!cfg.apiKey) {
+            var curProv = VISION_PROVIDERS[cfg.provider];
+            cfg.apiKey = (curProv && curProv.defaultKey) || DEFAULT_VISION_CONFIG.apiKey;
+        }
+        if (!cfg.mineruDefaultVersion) cfg.mode = 'mineru_precise';
+        if (!cfg.mode || ['fast','precise','mineru','mineru_precise'].indexOf(cfg.mode) < 0) cfg.mode = 'mineru_precise';
 
         document.getElementById('visionProvider').value = cfg.provider;
         updateVisionModelList();
@@ -1472,6 +1549,7 @@ function loadVisionConfig() {
         if (m.querySelector('option[value="' + cfg.model + '"]')) m.value = cfg.model;
         document.getElementById('visionApiKey').value = cfg.apiKey;
         document.getElementById('pdfParseMode').value = cfg.mode;
+        saveVisionConfig();
     } catch(e) {}
 }
 function getVisionConfig() {
@@ -1510,6 +1588,14 @@ function updateVisionModeBadge() {
         badge.textContent = key ? '🟣 精准模式' : '⚠ 精准模式（无Key）';
         badge.style.background = key ? '#ede7f6' : '#fff3e0';
         badge.style.color = key ? '#4527a0' : '#e65100';
+    } else if (mode === 'mineru') {
+        badge.textContent = '⚡ MinerU 轻量解析';
+        badge.style.background = '#e0f2fe';
+        badge.style.color = '#0369a1';
+    } else if (mode === 'mineru_precise') {
+        badge.textContent = '🧩 MinerU 精准解析';
+        badge.style.background = '#fef3c7';
+        badge.style.color = '#92400e';
     } else {
         badge.textContent = '🔵 快速模式';
         badge.style.background = '#e8f5e9';
@@ -1731,13 +1817,6 @@ function renderPdfList() {
         }
         var btnGroup = document.createElement('span');
         btnGroup.style.cssText = 'display:flex;gap:4px;';
-        if (p.status === 'ready') {
-            var exportBtn = document.createElement('button');
-            exportBtn.textContent = '导出MD';
-            exportBtn.style.cssText = 'background:#2ecc71;color:#fff;border:none;padding:2px 7px;border-radius:3px;cursor:pointer;font-size:11px;';
-            exportBtn.onclick = function() { exportPdfMarkdown(p.id); };
-            btnGroup.appendChild(exportBtn);
-        }
         var removeBtn = document.createElement('button');
         removeBtn.textContent = '移除';
         removeBtn.onclick = function() { removePdf(p.id); };
@@ -1766,26 +1845,122 @@ function showToast(msg, type) {
     clearTimeout(el._hideTimer);
     el._hideTimer = setTimeout(function() { el.classList.remove('show'); }, 2500);
 }
-window.refreshAllPdfAnalyses = function() {
-    showToast('正在刷新分析…', 'info');
+function createPdfFileFromEntry(entry) {
+    if (/\.md$/i.test(entry.fileName)) return null;
+    if (entry.fileData) {
+        var bytes = entry.fileData;
+        if (bytes instanceof ArrayBuffer) bytes = new Uint8Array(bytes);
+        else if (bytes instanceof Uint8Array) bytes = bytes;
+        else if (Array.isArray(bytes)) bytes = new Uint8Array(bytes);
+        else if (typeof bytes === 'object') {
+            var keys = Object.keys(bytes).filter(function(k) { return /^\d+$/.test(k); }).sort(function(a, b) { return Number(a) - Number(b); });
+            bytes = new Uint8Array(keys.map(function(k) { return bytes[k]; }));
+        }
+        if (!(bytes instanceof Uint8Array) || bytes.length < 5 || bytes[0] !== 37 || bytes[1] !== 80 || bytes[2] !== 68 || bytes[3] !== 70) {
+            throw new Error('原始PDF数据已损坏，无法重新解析。请重新上传PDF文件。');
+        }
+        entry.fileData = bytes;
+        return new File([bytes], entry.fileName, { type: 'application/pdf' });
+    }
+    if (entry.fileDataB64) {
+        var binary = atob(entry.fileDataB64);
+        var array = new Uint8Array(binary.length);
+        for (var i = 0; i < binary.length; i++) array[i] = binary.charCodeAt(i);
+        return new File([array], entry.fileName, { type: 'application/pdf' });
+    }
+    throw new Error('无原始文件数据，无法重新解析');
+}
+async function reparsePdfFromData(entry) {
+    var file = createPdfFileFromEntry(entry);
+    if (!file) return;
+    var result = await parsePdfToMarkdown(file, function(msg) {
+        document.getElementById('pdfStatusText').textContent = msg;
+    });
+    entry.markdown = result.markdown;
+    entry.questionIndex = result.questionIndex;
+    entry.detectedSubject = result.detectedSubject || detectSubjectByFileName(entry.fileName);
+    entry.source = result.source || 'local';
+    entry.status = 'ready';
+    delete entry._qi;
+}
+async function reparsePdfFromDataMinerU(entry, precise) {
+    var file = createPdfFileFromEntry(entry);
+    if (!file) return;
+    var result = await parsePdfToMarkdown_AutoFallback(file, function(msg) {
+        document.getElementById('pdfStatusText').textContent = msg;
+    }, precise);
+    entry.markdown = result.markdown;
+    entry.questionIndex = result.questionIndex;
+    entry.detectedSubject = result.detectedSubject || detectSubjectByFileName(entry.fileName);
+    entry.source = result.source || (precise ? 'mineru_precise' : 'mineru');
+    entry.mineruTaskId = result.taskId;
+    entry.mineruMarkdownUrl = result.markdownUrl;
+    entry.mineruBatchId = result.batchId;
+    entry.mineruZipUrl = result.zipUrl;
+    entry.status = 'ready';
+    delete entry._qi;
+}
+window.refreshAllPdfAnalyses = async function() {
+    var modeEl = document.getElementById('pdfParseMode');
+    var cfg = getVisionConfig();
+    var isPrecise = modeEl && modeEl.value === 'precise' && cfg.apiKey;
+    if (isPrecise) {
+        if (!await showConfirm('当前为精准模式（AI视觉识别），重新解析将消耗 API 额度，是否继续？')) { showToast('已取消', 'info'); return; }
+    }
+    showToast('正在重新解析试卷…', 'info');
+    var pdfEntries = uploadedPdfs.filter(function(p) { return p.status === 'ready' || p.status === 'error'; });
+    for (var i = 0; i < pdfEntries.length; i++) {
+        var p = pdfEntries[i];
+        if (/\.md$/i.test(p.fileName)) continue;
+        if (!p.fileData && !p.fileDataB64) {
+            showToast('试卷 "' + p.fileName + '" 无原始数据，跳过', 'warning');
+            continue;
+        }
+        try {
+            p.status = 'parsing';
+            renderPdfList();
+            await reparsePdfFromData(p);
+        } catch(err) {
+            p.status = 'error';
+            p.errorMsg = String(err.message || err);
+        }
+        renderPdfList();
+    }
     try { displayPersonalResults(); } catch(e) { console.warn('个人分析刷新失败', e); }
     try { renderCollectiveTables(); } catch(e) { console.warn('集体分析刷新失败', e); }
     showToast('分析已刷新', 'success');
 };
+window.reparseAllPdfsMinerU = async function() {
+    var modeEl = document.getElementById('pdfParseMode');
+    var precise = modeEl && modeEl.value === 'mineru_precise';
+    var label = precise ? 'MinerU 精准解析' : 'MinerU 轻量解析';
+    if (!await showConfirm('将通过本地服务重新提交所有PDF到 ' + label + '，可能需要几十秒到几分钟，是否继续？')) { showToast('已取消', 'info'); return; }
+    showToast('正在提交 ' + label + '...', 'info');
+    var pdfEntries = uploadedPdfs.filter(function(p) { return !/\.md$/i.test(p.fileName) && (p.status === 'ready' || p.status === 'error'); });
+    if (!pdfEntries.length) { showToast('没有可重新解析的 PDF', 'warning'); return; }
+    for (var i = 0; i < pdfEntries.length; i++) {
+        var p = pdfEntries[i];
+        if (!p.fileData && !p.fileDataB64) {
+            showToast('试卷 "' + p.fileName + '" 无原始数据，跳过', 'warning');
+            continue;
+        }
+        try {
+            p.status = 'parsing';
+            renderPdfList();
+            await reparsePdfFromDataMinerU(p, precise);
+        } catch(err) {
+            p.status = 'error';
+            p.errorMsg = String(err.message || err);
+        }
+        renderPdfList();
+    }
+    try { displayPersonalResults(); } catch(e) { console.warn('个人分析刷新失败', e); }
+    try { renderCollectiveTables(); } catch(e) { console.warn('集体分析刷新失败', e); }
+    DataPool.syncFromGlobalsIfEditing();
+    showToast(label + '完成', 'success');
+};
 window.removePdf = (id) => { uploadedPdfs = uploadedPdfs.filter(p => p.id !== id); renderPdfList(); };
-function exportPdfMarkdown(id) {
-    var p = uploadedPdfs.find(function(p) { return p.id === id; });
-    if (!p || !p.markdown) return;
-    var blob = new Blob(['\uFEFF' + p.markdown], { type: 'text/markdown;charset=utf-8' });
-    var a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = p.fileName.replace(/\.pdf$/i, '') + '.md';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(a.href);
-}
-window.exportPdfMarkdown = exportPdfMarkdown;
+
 
 function renderFileList() {
     const mu = document.getElementById('mainFileList'), su = document.getElementById('subFileList');
@@ -1960,7 +2135,95 @@ async function parsePdfToMarkdown(file, progressCb) {
     var inlineSubs = parseInlineSubQuestions(questionIndex, mdLines);
     inlineSubs.forEach(function(sq) { questionIndex.push(sq); });
     var detectedSubject = detectSubjectByFileName(file.name);
-    return { markdown: markdown, questionIndex: questionIndex, detectedSubject: detectedSubject };
+    return { markdown: markdown, questionIndex: questionIndex, detectedSubject: detectedSubject, source: 'local' };
+}
+
+async function parsePdfToMarkdown_MinerU(file, progressCb, precise) {
+    var isPrecise = !!precise;
+    if (!isPrecise && file.size > 10 * 1024 * 1024) throw new Error('MinerU 轻量接口限制文件不超过 10MB');
+    if (isPrecise && file.size > 200 * 1024 * 1024) throw new Error('MinerU 精准解析限制文件不超过 200MB');
+    if (!isPrecise && window.pdfjsLib) {
+        try {
+            if (progressCb) progressCb('正在检查 PDF 页数...');
+            var ab = await file.arrayBuffer();
+            var pdf = await window.pdfjsLib.getDocument({ data: ab, disableWorker: true }).promise;
+            if (pdf.numPages > 20) throw new Error('MinerU 轻量接口限制不超过 20 页，当前 ' + pdf.numPages + ' 页');
+        } catch(checkErr) {
+            if (/MinerU 轻量接口限制/.test(String(checkErr.message || checkErr))) throw checkErr;
+            console.warn('MinerU 页数预检查失败，继续提交服务端解析', checkErr);
+        }
+    }
+
+    if (progressCb) progressCb('正在提交到本地 MinerU ' + (isPrecise ? '精准' : '轻量') + '服务...');
+    var fd = new FormData();
+    fd.append('file', file, file.name);
+    fd.append('language', 'ch');
+    fd.append('enable_table', 'true');
+    fd.append('is_ocr', 'false');
+    fd.append('enable_formula', 'true');
+    if (isPrecise) fd.append('model_version', 'vlm');
+
+    var resp;
+    try {
+        resp = await fetch(MINERU_API_BASE + '/' + (isPrecise ? 'mineru/parse-file-precise' : 'mineru/parse-file'), { method: 'POST', body: fd });
+    } catch(err) {
+        throw new Error('无法连接本地 MinerU 服务。请先运行: python mineru_server.py');
+    }
+    var text = await resp.text();
+    var data;
+    try { data = JSON.parse(text); } catch(e) { throw new Error('本地 MinerU 服务返回非 JSON: ' + text.slice(0, 200)); }
+    if (!resp.ok || !data.ok) throw new Error(data.error || ('本地 MinerU 服务失败: HTTP ' + resp.status));
+
+    if (progressCb) progressCb('MinerU 解析完成，正在构建题目索引...');
+    var markdown = data.markdown || '';
+    var questionIndex = buildQuestionIndexFromMarkdown(markdown);
+    var detectedSubject = detectSubjectByFileName(file.name);
+    return {
+        markdown: markdown,
+        questionIndex: questionIndex,
+        detectedSubject: detectedSubject,
+        source: isPrecise ? 'mineru_precise' : 'mineru',
+        taskId: data.task_id || '',
+        markdownUrl: data.markdown_url || '',
+        batchId: data.batch_id || '',
+        zipUrl: data.full_zip_url || ''
+    };
+}
+
+async function parsePdfToMarkdown_LocalFast(file, progressCb) {
+    var modeEl = document.getElementById('pdfParseMode');
+    var oldMode = modeEl ? modeEl.value : '';
+    if (modeEl) modeEl.value = 'fast';
+    try {
+        return await parsePdfToMarkdown(file, progressCb);
+    } finally {
+        if (modeEl) modeEl.value = oldMode;
+    }
+}
+
+async function parsePdfToMarkdown_AutoFallback(file, progressCb, preferPrecise) {
+    var errors = [];
+    if (preferPrecise) {
+        try {
+            return await parsePdfToMarkdown_MinerU(file, progressCb, true);
+        } catch(err) {
+            errors.push('精准: ' + (err.message || err));
+            console.warn('MinerU 精准解析失败，降级到轻量解析', err);
+            if (progressCb) progressCb('⚠ MinerU 精准解析失败，正在尝试轻量解析...');
+        }
+    }
+
+    try {
+        return await parsePdfToMarkdown_MinerU(file, progressCb, false);
+    } catch(err) {
+        errors.push('轻量: ' + (err.message || err));
+        console.warn('MinerU 轻量解析失败，降级到 pdf.js', err);
+        if (progressCb) progressCb('⚠ MinerU 轻量解析失败，正在使用 pdf.js 快速模式...');
+    }
+
+    var result = await parsePdfToMarkdown_LocalFast(file, progressCb);
+    result.fallbackErrors = errors;
+    return result;
 }
 
 // ============================================================
@@ -1997,9 +2260,14 @@ async function callVisionAPI(base64Image, apiConfig) {
                 ]
             }
         ],
-        max_tokens: 4096,
+        max_tokens: 8192,
         temperature: 0.1
     };
+    // Kimi K2 系列需禁用思考模式，且使用固定 temperature（不能传入自定义值）
+    if (apiConfig.provider === 'kimi' && /^kimi-k2/.test(apiConfig.model)) {
+        payload.thinking = { type: 'disabled' };
+        delete payload.temperature;
+    }
 
     var resp = await fetch(prov.baseUrl + '/chat/completions', {
         method: 'POST',
@@ -2043,7 +2311,7 @@ async function parsePdfToMarkdown_Vision(file, progressCb) {
         var page = await pdf.getPage(pn);
         var base64 = '';
         try {
-            base64 = await renderPdfPageToCanvas(page, 2.5);
+            base64 = await renderPdfPageToCanvas(page, 3.0);
         } catch(renderErr) {
             mdLines.push('## 第 ' + pn + ' 页', '', '> ⚠ 页面渲染失败: ' + renderErr.message, '');
             continue;
@@ -2071,7 +2339,49 @@ async function parsePdfToMarkdown_Vision(file, progressCb) {
     var detectedSubject = detectSubjectByFileName(file.name);
 
     if (progressCb) progressCb('✔ AI 识别完成（' + numPages + ' 页）');
-    return { markdown: markdown, questionIndex: questionIndex, detectedSubject: detectedSubject };
+    return { markdown: markdown, questionIndex: questionIndex, detectedSubject: detectedSubject, source: 'vision' };
+}
+
+// ============================================================
+//  Image embedding: download MinerU CDN images → compress → base64
+// ============================================================
+async function embedImagesAsBase64(mdText, maxWidth, quality) {
+    if (typeof mdText !== 'string') return mdText;
+    var urlPattern = /!\[image\]\((https?:\/\/[^)]+)\)/g;
+    var urls = [], match;
+    while ((match = urlPattern.exec(mdText)) !== null) {
+        if (urls.indexOf(match[1]) < 0) urls.push(match[1]);
+    }
+    if (!urls.length) return mdText;
+    var results = await Promise.all(urls.map(function(url) {
+        return fetch(url, { mode: 'cors' }).then(function(resp) {
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            return resp.blob();
+        }).then(function(blob) {
+            return new Promise(function(resolve, reject) {
+                var img = new Image();
+                var blobUrl = URL.createObjectURL(blob);
+                img.onload = function() {
+                    URL.revokeObjectURL(blobUrl);
+                    var canvas = document.createElement('canvas');
+                    var w = img.width, h = img.height;
+                    if (w > (maxWidth || 400)) { h = h * (maxWidth || 400) / w; w = (maxWidth || 400); }
+                    canvas.width = w; canvas.height = h;
+                    var ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, w, h);
+                    resolve({ url: url, dataUri: canvas.toDataURL('image/jpeg', quality || 0.3) });
+                };
+                img.onerror = function() { URL.revokeObjectURL(blobUrl); reject(new Error('图片解码失败')); };
+                img.src = blobUrl;
+            });
+        }).catch(function(err) {
+            console.warn('图片下载/压缩失败: ' + url, err.message);
+            return { url: url, dataUri: null };
+        });
+    }));
+    var result = mdText;
+    results.forEach(function(r) { if (r.dataUri) result = result.split(r.url).join(r.dataUri); });
+    return result;
 }
 
 // Rebuild question index from markdown text (backward compat for old saved PDFs)
@@ -2081,7 +2391,7 @@ function buildQuestionIndexFromMarkdown(markdown) {
     var curMajor = null, curSub = null, majorStart = -1, subStart = -1;
     for (var i = 0; i < lines.length; i++) {
         var L = lines[i];
-        if (!L || /^#/.test(L) || /^---/.test(L)) { if (!/^##\s*第\s*\d+\s*页/.test(L)) continue; }
+        if (!L || /^#/.test(L) || /^---/.test(L)) { if (!/^##\s*第\s*\d+\s*页/.test(L)) { if (/^##/.test(L) && curMajor !== null) { finalizeQ(); curMajor = null; curSub = null; majorStart = -1; subStart = -1; } continue; } }
         var clean = L.replace(/^(\*\*)+|(\*\*)+$/g, '').trim();
         if (!clean) continue;
         var cClean = compactDigits(clean);
@@ -2089,6 +2399,13 @@ function buildQuestionIndexFromMarkdown(markdown) {
         if (mM) {
             if (curMajor !== null) finalizeQ();
             curMajor = mM[1]; curSub = null; majorStart = i; subStart = -1;
+            continue;
+        }
+        // Combined major+minor: "9（1）", "9(1)"
+        var cm = cClean.match(/^(\d{1,2})[（(]\s*(\d{1,2})\s*[）)]/);
+        if (cm) {
+            if (curMajor !== null) finalizeQ();
+            curMajor = cm[1]; curSub = cm[2]; majorStart = i; subStart = i;
             continue;
         }
         var sM = cClean.match(/^[（(]\s*(\d{1,2})\s*[）)]/);
@@ -2174,11 +2491,8 @@ class PdfQuestionIndex {
 
 function ensurePdfQuestionIndex(pdfEntry) {
     if (pdfEntry._qi && typeof pdfEntry._qi.findByNumber === 'function') return pdfEntry._qi;
-    var qiArr = pdfEntry.questionIndex;
-    if (!qiArr || !qiArr.length) {
-        qiArr = buildQuestionIndexFromMarkdown(pdfEntry.markdown);
-        pdfEntry.questionIndex = qiArr;
-    }
+    var qiArr = buildQuestionIndexFromMarkdown(pdfEntry.markdown);
+    pdfEntry.questionIndex = qiArr;
     pdfEntry._qi = new PdfQuestionIndex(qiArr);
     if (typeof pdfEntry._qi.findByNumber !== 'function') {
         console.warn('PdfQuestionIndex created without findByNumber:', pdfEntry._qi);
@@ -2419,7 +2733,7 @@ function findTextByItemFallback(lines, item) {
         for (var i = start + 1; i < lines.length; i++) {
             var t = String(lines[i] || '').trim();
             if (!t) continue;
-            if (/^\d{1,3}\s*[\.、．)]/.test(compactDigits(t)) || /^第\s*\d+\s*题/.test(t) || /^##/.test(t)) return i - 1;
+            if (/^\d{1,3}\s*[\.、．)]/.test(compactDigits(t)) || /^\d{1,2}[（(]\s*\d{1,2}\s*[）)]/.test(t) || /^第\s*\d+\s*题/.test(t) || /^##/.test(t)) return i - 1;
         }
         return lines.length - 1;
     };
@@ -3564,11 +3878,16 @@ function showCollectiveStudentDetail(name) {
         html += `<tr><td>${t}</td><td>${item.scoreHeader||''}</td><td>${score!==undefined&&score!==null&&score!==''?score:'-'}</td><td>${saCell}</td><td>${typeof avg==='number'?avg.toFixed(2):avg}</td><td>${wd}</td></tr>`;
     });
     html += '</tbody></table></div>';
+
+    // ---- 错题本入口按钮 ----
+    html += '<div style="margin-top:16px;">';
+    html += '<button class="upload-btn" onclick="showPersonalErrorNotebook(\'' + escapeHtml(name).replace(/'/g,"\\'") + '\')" style="background:#e74c3c;padding:8px 20px;font-size:14px;min-width:44px;min-height:44px;border-radius:6px;border:none;color:#fff;cursor:pointer;transition:background 0.15s,transform 0.1s;" onmouseover="this.style.background=\'#c0392b\'" onmouseout="this.style.background=\'#e74c3c\'" onmousedown="this.style.transform=\'scale(0.96)\'" onmouseup="this.style.transform=\'scale(1)\'">📘 查看该生错题本</button>';
+    html += '</div>';
+
     res.innerHTML = html;
 }
 
 function showQuestionLowStudents(title) {
-    var container = document.getElementById('questionStudentsResult');
     var fd = getCollectiveFilteredData();
     var ss = getSelectedSubject();
     var sc = document.getElementById('collectiveClassFilter').value;
@@ -3577,15 +3896,13 @@ function showQuestionLowStudents(title) {
     var qd = utilBuildQuestionDict(hc.scoreCols, hc.ansCols, fd, ss);
     var item = qd[title];
     if (!item || item.scoreIdx == null) {
-        container.innerHTML = '<div class="info-section" style="border-left-color:#e74c3c;">题目「' + title.replace(/</g,'&lt;') + '」无详细得分数据</div>';
-        container.style.display = 'block';
+        showStudentListModal('提示', '题目「' + title.replace(/</g,'&lt;') + '」无详细得分数据');
         return;
     }
     var header = fd.headers[item.scoreIdx];
     var fullScore = item.fullScore;
     if (!fullScore) {
-        container.innerHTML = '<div class="info-section" style="border-left-color:#e74c3c;">题目「' + title.replace(/</g,'&lt;') + '」无满分数据，无法计算阈值</div>';
-        container.style.display = 'block';
+        showStudentListModal('提示', '题目「' + title.replace(/</g,'&lt;') + '」无满分数据，无法计算阈值');
         return;
     }
     var thresholdVal = fullScore * collectiveThreshold / 100;
@@ -3594,16 +3911,13 @@ function showQuestionLowStudents(title) {
         return !isNaN(score) && score < thresholdVal;
     }).sort(function(a,b) { return parseFloat(a[header]) - parseFloat(b[header]); });
     if (!lowStudents.length) {
-        container.innerHTML = '<div class="info-section" style="border-left-color:#27ae60;">题目「' + title.replace(/</g,'&lt;') + '」：<b>无学生低于阈值</b>（' + thresholdVal.toFixed(1) + ' 分 = ' + fullScore + ' × ' + collectiveThreshold + '%），' + ct + '，科目：' + (ss||'全部') + '</div>';
-        container.style.display = 'block';
+        showStudentListModal('提示', '题目「' + title.replace(/</g,'&lt;') + '」：<b>无学生低于阈值</b>（' + thresholdVal.toFixed(1) + ' 分 = ' + fullScore + ' × ' + collectiveThreshold + '%），' + ct + '，科目：' + (ss||'全部'));
         return;
     }
-    var html = '<div class="statistics-section" style="border-left:4px solid #e74c3c;">';
-    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">';
-    html += '<h4 style="color:#e74c3c;margin:0;">题目「' + title.replace(/</g,'&lt;') + '」低分学生（得分 &lt; ' + thresholdVal.toFixed(1) + ' 分，共 ' + lowStudents.length + ' 人）</h4>';
-    html += '<span style="font-size:12px;color:#888;">科目：' + (ss||'全部') + ' | ' + ct + ' | 阈值：' + collectiveThreshold + '%</span>';
-    html += '</div>';
-    html += '<div class="scroll-container" style="max-height:250px;"><table><thead><tr><th>#</th><th>姓名</th><th>班级</th><th>得分</th><th>满分</th><th>得分率</th><th>学生答案</th></tr></thead><tbody>';
+    var mt = '题目「' + title.replace(/</g,'&lt;') + '」低分学生（得分 &lt; ' + thresholdVal.toFixed(1) + ' 分，共 ' + lowStudents.length + ' 人）';
+    var info = '科目：' + (ss||'全部') + ' | ' + ct + ' | 阈值：' + collectiveThreshold + '%';
+    var html = '<div style="font-size:12px;color:#888;margin-bottom:6px;">' + info + '</div>';
+    html += '<div style="overflow-x:auto;"><table style="font-size:13px;width:100%;border-collapse:collapse;"><thead><tr><th>#</th><th>姓名</th><th>班级</th><th>得分</th><th>满分</th><th>得分率</th><th>学生答案</th></tr></thead><tbody>';
     lowStudents.forEach(function(r, i) {
         var score = parseFloat(r[header]);
         var rate = (score / fullScore * 100).toFixed(1) + '%';
@@ -3611,11 +3925,159 @@ function showQuestionLowStudents(title) {
         html += '<tr><td>' + (i+1) + '</td><td>' + escapeHtml(r[fd.nameField]||'') + '</td><td>' + escapeHtml(r[fd.classField]||'') + '</td><td style="color:#e74c3c;font-weight:bold;">' + score + '</td><td>' + fullScore + '</td><td>' + rate + '</td><td>' + escapeHtml(ans) + '</td></tr>';
     });
     html += '</tbody></table></div>';
-    html += '<div style="margin-top:4px;"><button class="upload-btn small danger" onclick="document.getElementById(\'questionStudentsResult\').style.display=\'none\';">关闭</button></div>';
-    html += '</div>';
-    container.innerHTML = html;
-    container.style.display = 'block';
-    container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    showStudentListModal(mt, html);
+}
+
+// ============================================================
+//  跨批次错题收集 & 个人错题本
+// ============================================================
+function collectStudentErrorsFromAllBatches(studentName) {
+    var result = { allErrors: [], totalErrors: 0, subjectCount: 0, batchCount: 0 };
+    if (!DataPool.batches || !DataPool.batches.length) return result;
+    var subjectSet = {}, batchSet = {};
+    DataPool.batches.forEach(function(batch) {
+        var students = batch.combinedStudentData;
+        if (!students || !students.length) return;
+        var stu = students.find(function(s) { return String(s.name).trim() === String(studentName).trim(); });
+        if (!stu) return;
+        batchSet[batch.label] = true;
+        if (!stu.subjects) return;
+        Object.keys(stu.subjects).forEach(function(subjName) {
+            var subj = stu.subjects[subjName];
+            if (!subj || !subj.subScores) return;
+            subjectSet[subjName] = true;
+            Object.keys(subj.subScores).forEach(function(itemKey) {
+                var item = subj.subScores[itemKey];
+                if (!item || typeof item !== 'object') return;
+                var snum = parseFloat(item.score), mnum = parseFloat(item.maxScore);
+                if (isNaN(snum) || isNaN(mnum) || mnum <= 0) return;
+                if (snum >= mnum) return;
+                result.allErrors.push({
+                    batchLabel: batch.label,
+                    batchId: batch.id,
+                    subjectName: subjName,
+                    itemName: itemKey,
+                    score: snum,
+                    maxScore: mnum,
+                    rate: Math.max(0, Math.min(1, snum / mnum)),
+                    studentAnswer: String(item.studentAnswer || '').trim(),
+                    correctAnswer: String(item.correctAnswer || '').trim()
+                });
+            });
+        });
+    });
+    result.allErrors.sort(function(a, b) {
+        if (a.subjectName !== b.subjectName) return a.subjectName.localeCompare(b.subjectName, 'zh');
+        if (a.batchLabel !== b.batchLabel) return a.batchLabel.localeCompare(b.batchLabel, 'zh');
+        return a.rate - b.rate;
+    });
+    result.totalErrors = result.allErrors.length;
+    result.subjectCount = Object.keys(subjectSet).length;
+    result.batchCount = Object.keys(batchSet).length;
+    return result;
+}
+
+function extractQuestionTextFromPdf(batch, subjectName, itemKey) {
+    if (!batch.uploadedPdfs || !batch.uploadedPdfs.length) return '';
+    var subjectPdfs = batch.uploadedPdfs.filter(function(p) {
+        if (p.status !== 'ready' || !p.markdown) return false;
+        if (p.detectedSubject) return pdfSubjectMatches(p.detectedSubject, subjectName);
+        return true;
+    });
+    var foundText = '';
+    subjectPdfs.forEach(function(p) {
+        if (foundText) return;
+        var qi = ensurePdfQuestionIndex(p);
+        var entries = findPdfQuestionEntries(qi, itemKey);
+        if (!entries.length) {
+            var lines = p.markdown.split(/\r?\n/);
+            var fb = findTextByItemFallback(lines, itemKey);
+            if (fb) entries = [{ text: fb, matchType: 'fallback' }];
+        }
+        if (entries.length) {
+            foundText = entries[0].text || '';
+            // Remove isolated digit lines (page numbers, line refs like "11", "22", "31")
+            foundText = foundText.split(/\r?\n/).filter(function(l) {
+                var t = l.replace(/[\s\u00A0\u200B-\u200D\uFEFF]+/g, '');
+                return !(/^\d{1,3}$/.test(t) && t !== '');
+            }).join('\n').trim();
+        }
+    });
+    return foundText;
+}
+
+function showPersonalErrorNotebook(studentName) {
+    var crossData = collectStudentErrorsFromAllBatches(studentName);
+    if (!crossData.totalErrors) {
+        showAlert('该学生在所有批次中均无错题记录');
+        return;
+    }
+    // Group by subject
+    var subjectGroups = {};
+    crossData.allErrors.forEach(function(e) {
+        if (!subjectGroups[e.subjectName]) subjectGroups[e.subjectName] = [];
+        subjectGroups[e.subjectName].push(e);
+    });
+    // Batch colors (rotate per unique batch label)
+    var batchLabels = [...new Set(crossData.allErrors.map(function(e) { return e.batchLabel; }))];
+    var BATCH_COLORS = ['#7c3aed','#0891b2','#dc2626','#ca8a04','#16a34a','#db2777','#ea580c','#4f46e5'];
+    var batchColorMap = {};
+    batchLabels.forEach(function(label, i) {
+        batchColorMap[label] = BATCH_COLORS[i % BATCH_COLORS.length];
+    });
+
+    var html = '';
+    // Summary bar
+    html += '<div style="background:#fdf2f2;border-radius:8px;padding:16px 20px;margin-bottom:24px;border-left:4px solid #e74c3c;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">';
+    html += '<div><div style="font-size:16px;font-weight:bold;color:#c0392b;">' + escapeHtml(studentName) + '</div>';
+    html += '<div style="font-size:13px;color:#666;margin-top:4px;">共 <b>' + crossData.totalErrors + '</b> 道错题，涉及 <b>' + crossData.subjectCount + '</b> 个科目，<b>' + crossData.batchCount + '</b> 次考试</div></div>';
+    html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
+    batchLabels.forEach(function(label) {
+        var bc = batchColorMap[label];
+        html += '<span style="display:inline-block;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:bold;color:#fff;background:' + bc + ';">' + escapeHtml(label) + '</span>';
+    });
+    html += '</div></div>';
+    // Per subject
+    var subjectNames = Object.keys(subjectGroups).sort(function(a,b) { return a.localeCompare(b, 'zh'); });
+    subjectNames.forEach(function(sn) {
+        var errors = subjectGroups[sn];
+        var wrongCount = errors.length;
+        var avgRate = (errors.reduce(function(s, e) { return s + e.rate; }, 0) / wrongCount * 100).toFixed(0);
+        html += '<div style="margin-bottom:24px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.06);">';
+        html += '<div style="background:#f5f3ff;padding:10px 16px;font-weight:bold;font-size:14px;color:#5b21b6;border-bottom:1px solid #e0e7ff;">';
+        html += '📖 ' + escapeHtml(sn) + ' <span style="font-weight:normal;font-size:12px;color:#9ca3af;">（错题 ' + wrongCount + ' 道，平均得分率 ' + avgRate + '%）</span>';
+        html += '</div>';
+        html += '<div style="padding:8px 16px;">';
+        errors.forEach(function(e, idx) {
+            var rateColor = e.rate < 0.3 ? '#e74c3c' : (e.rate < 0.6 ? '#d97706' : '#16a34a');
+            var ratePct = (e.rate * 100).toFixed(0) + '%';
+            var bc = batchColorMap[e.batchLabel] || '#6b7280';
+            html += '<div style="padding:12px 0;' + (idx < errors.length - 1 ? 'border-bottom:1px solid #f3f4f6;' : '') + 'transition:background 0.15s;" onmouseover="this.style.background=\'#f9fafb\'" onmouseout="this.style.background=\'transparent\'">';
+            // Top row: item name + batch badge
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px;">';
+            html += '<span style="font-weight:bold;font-size:13px;color:#111827;">' + escapeHtml(e.itemName) + '</span>';
+            html += '<span style="display:inline-block;padding:2px 10px;border-radius:10px;font-size:11px;font-weight:bold;color:#fff;background:' + bc + ';">' + escapeHtml(e.batchLabel) + '</span>';
+            html += '</div>';
+            // Score line
+            html += '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:#4b5563;">';
+            html += '<span>得分：<b style="color:' + rateColor + ';font-size:14px;">' + e.score + '/' + e.maxScore + '</b> <span style="display:inline-block;width:48px;height:6px;background:#e5e7eb;border-radius:3px;vertical-align:middle;overflow:hidden;"><span style="display:block;height:100%;width:' + (e.rate * 100) + '%;background:' + rateColor + ';border-radius:3px;transition:width 0.3s;"></span></span> ' + ratePct + '</span>';
+            html += '<span>你的答案：<b style="color:#e74c3c;">' + escapeHtml(e.studentAnswer || '(空白)') + '</b></span>';
+            html += '<span>正确答案：<b style="color:#16a34a;">' + escapeHtml(e.correctAnswer || '-') + '</b></span>';
+            html += '</div>';
+            // Question text from PDF
+            var batch = DataPool.batches.find(function(b) { return b.id === e.batchId; });
+            if (batch) {
+                var qText = extractQuestionTextFromPdf(batch, e.subjectName, e.itemName);
+                if (qText) {
+                    var renderedQ = (typeof marked !== 'undefined') ? marked.parse(qText) : escapeHtml(qText);
+                    html += '<div class="markdown-body" style="margin-top:8px;padding:8px 12px;background:#f9fafb;border-radius:6px;border-left:3px solid #6366f1;max-height:300px;overflow-y:auto;">' + renderedQ + '</div>';
+                }
+            }
+            html += '</div>';
+        });
+        html += '</div></div>';
+    });
+    showErrorNotebookModal('📘 个人错题本 — ' + escapeHtml(studentName), html);
 }
 
 // ============================================================
@@ -4205,6 +4667,12 @@ function findRowByName(dataset, name) {
 // ---- Vision AI UI bindings ----
 document.getElementById('visionProvider').addEventListener('change', function() {
     updateVisionModelList();
+    var prov = VISION_PROVIDERS[this.value];
+    var keyInput = document.getElementById('visionApiKey');
+    if (prov && prov.defaultKey && (!keyInput.value.trim() || keyInput.dataset.lastProvider !== this.value)) {
+        keyInput.value = prov.defaultKey;
+        keyInput.dataset.lastProvider = this.value;
+    }
     saveVisionConfig();
 });
 document.getElementById('visionModel').addEventListener('change', saveVisionConfig);
@@ -4240,12 +4708,20 @@ document.getElementById('visionTestBtn').addEventListener('click', async functio
                 'Content-Type': 'application/json',
                 'Authorization': 'Bearer ' + cfg.apiKey
             },
-            body: JSON.stringify({
-                model: cfg.model,
-                messages: [{ role: 'user', content: '请回复"连接成功"四个字，不要其他内容。' }],
-                max_tokens: 20,
-                temperature: 0
-            })
+            body: JSON.stringify(function() {
+                var b = {
+                    model: cfg.model,
+                    messages: [{ role: 'user', content: '请回复"连接成功"四个字，不要其他内容。' }],
+                    max_tokens: 20
+                };
+                // Kimi K2 使用固定 temperature，不能传此字段
+                if (cfg.provider === 'kimi' && /^kimi-k2/.test(cfg.model)) {
+                    b.thinking = { type: 'disabled' };
+                } else {
+                    b.temperature = 0;
+                }
+                return b;
+            }())
         });
         if (!resp.ok) {
             var errText = '';
@@ -4253,12 +4729,11 @@ document.getElementById('visionTestBtn').addEventListener('click', async functio
             throw new Error('HTTP ' + resp.status + ': ' + (errText.slice(0, 150) || resp.statusText));
         }
         var data = await resp.json();
-        var reply = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
-        if (reply.indexOf('连接成功') >= 0 || reply.indexOf('成功') >= 0) {
+        if (resp.ok) {
             status.textContent = '✅ ' + prov.name + ' 连接成功！模型: ' + cfg.model;
             status.style.color = '#2e7d32';
         } else {
-            status.textContent = '⚠ 服务响应异常: ' + reply.slice(0, 60);
+            status.textContent = '⚠ 服务响应异常';
             status.style.color = '#e65100';
         }
     } catch(err) {
@@ -4277,7 +4752,7 @@ document.getElementById('subHeaderRows').addEventListener('change', () => { if (
 document.getElementById('pdfFileInput').addEventListener('change', async function(e) {
     const files = Array.from(e.target.files || []).filter(f => /\.(pdf|md)$/i.test(f.name));
     for (const f of files) {
-        const entry = { id: 'pdf_' + Date.now() + '_' + Math.random().toString(16).slice(2), fileName: f.name, markdown: '', questionIndex: [], status: 'parsing', errorMsg: '' };
+        const entry = { id: 'pdf_' + Date.now() + '_' + Math.random().toString(16).slice(2), fileName: f.name, markdown: '', questionIndex: [], status: 'parsing', errorMsg: '', source: '' };
         uploadedPdfs.push(entry); renderPdfList();
         try {
             if (/\.md$/i.test(f.name)) {
@@ -4289,11 +4764,28 @@ document.getElementById('pdfFileInput').addEventListener('change', async functio
                 });
                 entry.questionIndex = buildQuestionIndexFromMarkdown(entry.markdown);
                 entry.detectedSubject = detectSubjectByFileName(f.name);
+                entry.source = 'md';
             } else {
-                var result = await parsePdfToMarkdown(f, function(msg) { document.getElementById('pdfStatusText').textContent = msg; });
+                // Read and save raw file data before parsing (for later re-parse)
+                var rawAB = await f.arrayBuffer();
+                entry.fileData = new Uint8Array(rawAB);
+                var modeEl = document.getElementById('pdfParseMode');
+                var mineruMode = modeEl && (modeEl.value === 'mineru' || modeEl.value === 'mineru_precise');
+                var result = mineruMode
+                    ? await parsePdfToMarkdown_AutoFallback(f, function(msg) { document.getElementById('pdfStatusText').textContent = msg; }, modeEl.value === 'mineru_precise')
+                    : await parsePdfToMarkdown(f, function(msg) { document.getElementById('pdfStatusText').textContent = msg; });
                 entry.markdown = result.markdown;
                 entry.questionIndex = result.questionIndex;
                 entry.detectedSubject = result.detectedSubject || detectSubjectByFileName(f.name);
+                entry.source = result.source || 'local';
+                if (result.taskId) entry.mineruTaskId = result.taskId;
+                if (result.markdownUrl) entry.mineruMarkdownUrl = result.markdownUrl;
+                if (result.batchId) entry.mineruBatchId = result.batchId;
+                if (result.zipUrl) entry.mineruZipUrl = result.zipUrl;
+            }
+            if (entry.source !== 'mineru' && entry.source !== 'mineru_precise') {
+                document.getElementById('pdfStatusText').textContent = '正在下载并压缩试卷图片...';
+                entry.markdown = await embedImagesAsBase64(entry.markdown);
             }
             entry.status = 'ready';
             delete entry._qi; // invalidate cached index
@@ -5191,6 +5683,22 @@ function refreshComprehensiveTab() {
         });
     }
 
+    // Populate comparison batch dropdown for single-subject analysis
+    var cmpBatchSel = document.getElementById('comprehensiveSubjCompareBatch');
+    if (cmpBatchSel) {
+        var prevCmpVal2 = cmpBatchSel.value;
+        cmpBatchSel.innerHTML = '<option value="">仅本次（无对比）</option>';
+        DataPool.batches.forEach(function(b) {
+            if (b.id !== DataPool.currentBatchId) {
+                var o = document.createElement('option');
+                o.value = b.id; o.textContent = b.label; cmpBatchSel.appendChild(o);
+            }
+        });
+        if (prevCmpVal2 && DataPool.batches.find(function(b) { return b.id === prevCmpVal2; })) {
+            cmpBatchSel.value = prevCmpVal2;
+        }
+    }
+
     if (!combinedStudentData.length) return;
     var names = Array.from(new Set(combinedStudentData.map(function(s) { return s.name; }))).sort();
     names.forEach(function(n) {
@@ -5843,58 +6351,48 @@ var SEATING_AI_PROMPT = [
 
 var SUBJ_AI_PROMPT = [
     '# 角色与任务',
-    '你是一位拥有 10 年一线教学数据分析经验的资深教育数据分析师，同时兼任班主任。',
-    '请严格依据下方提供的单科班级分析报告，为指定班级的指定科目生成一份**分层精准教学建议**。',
+    '你是一位拥有 10 年一线教学数据分析经验的资深学科教研员，擅长从动态数据中剥离试卷难度，评估教学效能，并进行前瞻性预警。',
+    '请严格依据下方提供的单科班级深度诊断报告，生成一份**剥离难度、直击痛点、前瞻指导的教学建议**。',
     '',
     '---',
     '',
     '# 数据说明',
-    '报告包含以下数据段：',
+    '报告包含以下进阶数据段：',
     '',
-    '1. **元信息表**：班级、科目、总人数、满分、薄弱阈值——这是本次分析的基本范围。',
-    '2. **一、分层统计**：将全班学生按成绩分为领先/中上/临界/后进四个层次，列出每层所有学生姓名、人数、得分率区间。分层依据在表头或备注中说明（排名比例分段或等级映射）。',
-    '3. **二、各层失分要点**：',
-    '   - 「全层共有薄弱题目」：出现在 ≥3 个层次的共性薄弱题，按总失分人数排序。',
-    '   - 「XX层—层特有」：该层次独有的薄弱题（级联筛选，不重复计入上层已选题目）。',
-    '   - 「全班薄弱题目一览」：全班平均得分率 < 0.45 的所有题目，按得分率升序排列。',
-    '   - 「重点帮扶学生」：后进+临界层中失分题数最多的学生及其具体失分题号。',
-    '   - 「领先层培优方向」：领先层失分人数最多的题目。',
-    '4. **三、班级分层结构分析与分层教学建议**：',
-    '   - 「班级分层结构分析」表格包含各层人数、占比、学生姓名。',
-    '   - 「分层教学建议」表格已预填部分薄弱题号供参考。',
+    '1. **元信息表**：班级、科目、总人数、满分、薄弱阈值、对比批次——这是本次分析的基本范围。',
+    '2. **一、教学效能与生态诊断**：增值评价（相对年级的进退步）、标准差（分化趋势）。',
+    '3. **二、分层统计与层间流转**：四层名单及跨次考试的等级升降级流转(📈/⚠️)。',
+    '4. **三、偏科拖累**：单科远低于其总盘水平的学生。',
+    '5. **四、各层失分要点**：全局共性薄弱、层特有薄弱、重点帮扶（含流转和偏科学生）。',
+    '6. **五、分层结构分析与前瞻建议**：结构表格+前瞻建议。',
     '',
     '---',
     '',
-    '# 分析要求',
-    '请依次完成以下分析：',
-    '',
-    '**1. 班级分层结构诊断**',
-    '- 分析各层人数与占比是否合理，判断班级属于哪种分布形态（橄榄形/金字塔形/断层形等）。',
-    '- 明确指出最需要关注的层次及其原因。',
-    '',
-    '**2. 共性薄弱点归因**',
-    '- 从「全层共有薄弱题目」和「全班薄弱题目一览」中，归纳 2~3 个共性知识模块或能力短板。',
-    '- 结合题目名称（如题号）归类；若报告附有 PDF 题目摘录可参考，否则仅依赖题号和数据。',
-    '',
-    '**3. 分层精准建议**',
-    '- 针对每个层次（领先/中上/临界/后进），结合该层的层特有薄弱题和共性薄弱题，给出 2 条可落地的教学策略。',
-    '- 必须点名该层具体学生姓名和具体题号，避免泛泛而谈。',
-    '',
-    '**4. 重点学生个别化方案**',
-    '- 从「重点帮扶学生」表格中，挑选失分最多的 3~5 名学生，逐一给出补救建议。',
-    '- 建议应具体到题号和知识点方向。',
-    '',
-    '**5. 资源分配建议**',
-    '- 从师资精力、课堂时间、课后辅导三方面给出分层资源分配建议。',
+    '# 分析红线（必须严格遵守，违反即为废稿）',
+    '- **禁谈绝对分数升降**：绝不分析"均分从70涨到80"，必须使用"增值评价"判断是吃难度红利还是真实进步。',
+    '- **禁做表层归因**：不能只说"第X题掌握不好"，必须推断是"基础识记塌陷"、"信息提取障碍"还是"高阶综合应用瓶颈"。',
+    '- **必须点名道姓**：策略必须关联到具体流转学生(📈/⚠️)和偏科学生，不可泛泛而谈。',
     '',
     '---',
     '',
-    '# 输出规范',
-    '- 仅输出 Markdown 格式。',
-    '- 使用 ## 二级标题组织报告段落。',
-    '- 关键数据用 **加粗** 强调。',
-    '- 多使用表格呈现对比信息。',
-    '- 禁止臆测未提供的数据（如知识点名称必须从题目原文推断，若无则写"需查看试卷原文"）。',
+    '# 输出规范与结构要求（严格按此Markdown输出）',
+    '',
+    '## 一、教学效能与生态预警',
+    '- 核心论点：基于增值评价，诊断本阶段教学是"正向产出"还是"相对衰退"；基于标准差，预警班级是否加速两极分化。',
+    '- 一句话定性：如"看似提分，实则分化加剧的虚假繁荣"。',
+    '',
+    '## 二、核心异动归因（重点深挖）',
+    '- **塌方点**：分析带⚠️（降级）的学生群体，结合其失分要点，推断他们掉队的共性认知瓶颈。',
+    '- **破局点**：分析带📈（升级）的学生群体，提炼他们做对了什么（如中档题稳住了）。',
+    '- **拖累点**：分析偏科拖累组（单科远弱于总分），明确指出对其进行干预的"杠杆效应"（拉起他们能稳住总盘）。',
+    '',
+    '## 三、分层精准干预策略（行动指南）',
+    '- **后进/临界层**：针对全局共性薄弱题，给出基础补救策略（点名具体流转学生和题号）。',
+    '- **中上层**：针对层特有薄弱题，给出防错与变式策略（重点盯防降级学生）。',
+    '- **领先层**：针对培优方向题，给出高阶思维突破策略。',
+    '',
+    '## 四、下阶段教学排兵布阵（前瞻建议）',
+    '- 给出未来2周：课堂时间分配比例（基础:中档:压轴）、课后辅导重点盯防的3-5人名单及个性化动作。',
     '',
     '---',
     '',
@@ -6124,7 +6622,7 @@ function generateSeatingReport(className) {
 }
 
 // Single-subject class analysis
-function generateSingleSubjectClassReport(classNames, subjectName, threshold, tierMode) {
+function generateSingleSubjectClassReport(classNames, subjectName, threshold, tierMode, compareBatchId) {
     if (tierMode == null) tierMode = 'rank';
     if (typeof classNames === 'string') classNames = [classNames];
     var classNameList = classNames.join('、');
@@ -6134,6 +6632,7 @@ function generateSingleSubjectClassReport(classNames, subjectName, threshold, ti
     if (!students.length) return null;
 
     // Validate grade data if grade mode selected
+    var tierFallbackNote = '';
     if (tierMode === 'grade') {
         var sh = allSubjectHeaders.find(function(h) { return h.name === subjectName; });
         var hasGradeCol = sh && sh.gradeIndex !== -1;
@@ -6142,8 +6641,8 @@ function generateSingleSubjectClassReport(classNames, subjectName, threshold, ti
             return sd && sd.grade && String(sd.grade).trim() !== '';
         });
         if (!hasGradeCol || !hasGradeVal) {
-            if (!confirm('「' + classNameList + ' — ' + subjectName + '」缺少等级数据，是否使用排名分层继续？')) return null;
             tierMode = 'rank';
+            tierFallbackNote = '> ⚠️ 所选科目无等级数据，已自动切换为排名分层';
         }
     }
 
@@ -6174,6 +6673,74 @@ function generateSingleSubjectClassReport(classNames, subjectName, threshold, ti
         return '—';
     }
 
+    // ===== 新增：生态分化与增值计算 =====
+    var ecoMetrics = null;
+    var flowMap = {}; // name -> { prevGrade }
+    if (compareBatchId) {
+        var compareBatch = DataPool.batches.find(function(b) { return b.id === compareBatchId; });
+        if (compareBatch) {
+            // --- 增值计算 ---
+            var curClassScores = students.map(function(s) {
+                var sd = s.subjects[subjectName];
+                return sd ? parseFloat(sd.score) : null;
+            }).filter(function(v) { return v != null && !isNaN(v); });
+            var curClassAvg = curClassScores.length ? curClassScores.reduce(function(a,b){return a+b;},0) / curClassScores.length : null;
+
+            var curGradeScores = combinedStudentData.map(function(s) {
+                var sd = s.subjects[subjectName];
+                return sd ? parseFloat(sd.score) : null;
+            }).filter(function(v) { return v != null && !isNaN(v); });
+            var curGradeAvg = curGradeScores.length ? curGradeScores.reduce(function(a,b){return a+b;},0) / curGradeScores.length : null;
+
+            var cmpStudents = compareBatch.combinedStudentData.filter(function(s) {
+                return classNames.indexOf(String(s.class)) >= 0;
+            });
+            var cmpClassScores = cmpStudents.map(function(s) {
+                var sd = s.subjects[subjectName];
+                return sd ? parseFloat(sd.score) : null;
+            }).filter(function(v) { return v != null && !isNaN(v); });
+            var cmpClassAvg = cmpClassScores.length ? cmpClassScores.reduce(function(a,b){return a+b;},0) / cmpClassScores.length : null;
+
+            var cmpGradeScores = compareBatch.combinedStudentData.map(function(s) {
+                var sd = s.subjects[subjectName];
+                return sd ? parseFloat(sd.score) : null;
+            }).filter(function(v) { return v != null && !isNaN(v); });
+            var cmpGradeAvg = cmpGradeScores.length ? cmpGradeScores.reduce(function(a,b){return a+b;},0) / cmpGradeScores.length : null;
+
+            var valueAdd = (curClassAvg - curGradeAvg) - (cmpClassAvg - cmpGradeAvg);
+
+            var curVariance = curClassScores.length ? curClassScores.reduce(function(sum, s) { return sum + (s - curClassAvg) * (s - curClassAvg); }, 0) / curClassScores.length : null;
+            var curStdDev = curVariance != null ? Math.sqrt(curVariance) : null;
+
+            var cmpVariance = cmpClassScores.length ? cmpClassScores.reduce(function(sum, s) { return sum + (s - cmpClassAvg) * (s - cmpClassAvg); }, 0) / cmpClassScores.length : null;
+            var cmpStdDev = cmpVariance != null ? Math.sqrt(cmpVariance) : null;
+
+            ecoMetrics = {
+                curClassAvg: curClassAvg,
+                curGradeAvg: curGradeAvg,
+                cmpClassAvg: cmpClassAvg,
+                cmpGradeAvg: cmpGradeAvg,
+                valueAdd: valueAdd,
+                curStdDev: curStdDev,
+                cmpStdDev: cmpStdDev,
+                diffStdDev: (curStdDev != null && cmpStdDev != null) ? (curStdDev - cmpStdDev) : null
+            };
+
+            // --- 等级流转准备 ---
+            students.forEach(function(s) {
+                var cmpStudent = compareBatch.combinedStudentData.find(function(cs) {
+                    return cs.name === s.name && String(parseInt(cs.class, 10)) === String(parseInt(s.class, 10));
+                });
+                if (!cmpStudent) return;
+                var cmpSd = cmpStudent.subjects[subjectName];
+                if (!cmpSd) return;
+                var prevGrade = cmpSd.grade ? String(cmpSd.grade).trim().toUpperCase() : '';
+                if (prevGrade && /^[ABC][+]?$/.test(prevGrade)) {
+                    flowMap[s.name] = { prevGrade: prevGrade };
+                }
+            });
+        }
+    }
     var tierStudents = { '领先': [], '中上': [], '临界': [], '后进': [] };
     var allRates = [];
     students.forEach(function(s) {
@@ -6193,8 +6760,53 @@ function generateSingleSubjectClassReport(classNames, subjectName, threshold, ti
         var score = sd ? parseFloat(sd.score) : null;
         var rate = (score != null && !isNaN(score) && fm != null && fm > 0) ? Math.round(score / fm * 100) : null;
         if (rate !== null) allRates.push(rate);
-        tierStudents[tier].push({ name: s.name, rank: rank, score: score, rate: rate });
+        // Compute grade flow status
+        var flowStatus = 'stable';
+        var gradeTransition = '';
+        if (flowMap[s.name]) {
+            var prevGrade = flowMap[s.name].prevGrade;
+            var curGrade = sd ? String(sd.grade || '').trim().toUpperCase() : '';
+            if (curGrade && prevGrade) {
+                var gradeOrder = ['C','C+','B','B+','A','A+'];
+                var prevIdx = gradeOrder.indexOf(prevGrade);
+                var curIdx = gradeOrder.indexOf(curGrade);
+                if (prevIdx >= 0 && curIdx >= 0 && curIdx !== prevIdx) {
+                    gradeTransition = prevGrade + '\u2192' + curGrade;
+                    flowStatus = curIdx > prevIdx ? 'up' : 'down';
+                }
+            }
+        }
+        s._flowStatus = flowStatus;
+        s._gradeTransition = gradeTransition;
+        tierStudents[tier].push({ name: s.name, rank: rank, score: score, rate: rate, flowStatus: flowStatus, gradeTransition: gradeTransition });
     });
+
+    // ===== 新增：偏科拖累识别 =====
+    var dragStudents = [];
+    var anchorSN2 = getTotalSubjectName(allSubjectHeaders);
+    if (anchorSN2) {
+        students.forEach(function(s) {
+            var sd = s.subjects[subjectName];
+            var ts = s.subjects[anchorSN2];
+            if (!sd || !ts) return;
+            var subjRank = parseInt(sd.gradeRank, 10) || parseInt(sd.schoolRank, 10) || null;
+            var totalRank = parseInt(ts.gradeRank, 10) || parseInt(ts.schoolRank, 10) || null;
+            if (subjRank == null || totalRank == null || totalPop <= 0) return;
+            var subjRatio = subjRank / totalPop;
+            var totalRatio = totalRank / totalPop;
+            var gap = subjRatio - totalRatio;
+            if (gap > 0.20) {
+                dragStudents.push({
+                    name: s.name,
+                    subjRankPct: Math.round(subjRatio * 100),
+                    totalRankPct: Math.round(totalRatio * 100),
+                    gap: Math.round(gap * 100)
+                });
+            }
+        });
+        dragStudents.sort(function(a, b) { return b.gap - a.gap; });
+        dragStudents = dragStudents.slice(0, 10);
+    }
 
     // For each student, extract weak sub-scores for this subject
     var tierWeakAgg = { '领先': {}, '中上': {}, '临界': {}, '后进': {} };
@@ -6303,40 +6915,34 @@ function generateSingleSubjectClassReport(classNames, subjectName, threshold, ti
     var globalPool = globCandidates.filter(function(g) { return g.poolTierCount >= 3; }).sort(function(a, b) { return b.totalCount - a.totalCount; }).slice(0, 4);
     var globalItemNames = globalPool.map(function(g) { return g.item; });
 
-    // Build report
+    // ── Build report ──
     var lines = [];
     var displayClass = classNames.length > 3 ? classNames.length + '个班级' : classNameList;
-    lines.push('# 单科班级分析 — ' + subjectName + ' — ' + displayClass);
+    var hasCompare = !!ecoMetrics;
+
+    lines.push(hasCompare ? '# 单科班级深度诊断 — ' + subjectName + ' — ' + displayClass : '# 单科班级分析 — ' + subjectName + ' — ' + displayClass);
     lines.push('');
     var fm = null;
     var fullMarks2 = expandSubjectFullMarks(getSubjectFullMarksFromInputs());
     fm = fullMarks2[subjectName];
     if (fm == null && subjectName === '英语') fm = (fullMarks2['英语笔试']||0) + (fullMarks2['听说']||0);
-    lines.push('| 班级 | 科目 | 总人数 | 满分 | 薄弱阈值 |');
-    lines.push('|------|------|--------|------|---------|');
-    lines.push('| ' + displayClass + ' | ' + subjectName + ' | ' + students.length + ' | ' + (fm || '—') + ' | ' + threshold + ' |');
-    lines.push('');
-
-    // Section 1: Tier statistics
-    lines.push('## 一、分层统计');
-    lines.push('');
-    if (tierMode === 'grade') {
-        lines.push('分层依据：等级（A+ → 领先、A → 领先、B+ → 中上、B → 临界、C+ → 后进、C → 后进）');
-        lines.push('');
+    if (hasCompare && ecoMetrics) {
+        var cmpBatch = DataPool.batches.find(function(b) { return b.id === compareBatchId; });
+        var cmpLabel = cmpBatch ? cmpBatch.label : '';
+        lines.push('| 班级 | 科目 | 总人数 | 满分 | 薄弱阈值 | 对比批次 |');
+        lines.push('|------|------|--------|------|---------|---------|');
+        lines.push('| ' + displayClass + ' | ' + subjectName + ' | ' + students.length + ' | ' + (fm || '—') + ' | ' + threshold + ' | ' + cmpLabel + ' |');
+    } else {
+        lines.push('| 班级 | 科目 | 总人数 | 满分 | 薄弱阈值 |');
+        lines.push('|------|------|--------|------|---------|');
+        lines.push('| ' + displayClass + ' | ' + subjectName + ' | ' + students.length + ' | ' + (fm || '—') + ' | ' + threshold + ' |');
     }
-    lines.push('| 层次' + (tierMode === 'grade' ? '（对应等级）' : '') + ' | 学生 | 人数 | 得分率区间 |');
-    lines.push('|------' + (tierMode === 'grade' ? '------------' : '') + '|------|------|-----------|');
-    ['领先', '中上', '临界', '后进'].forEach(function(tier) {
-        var stus = tierStudents[tier] || [];
-        if (!stus.length) return;
-        var rates = stus.map(function(s) { return s.rate; }).filter(function(r) { return r !== null; });
-        var rateRange = rates.length ? Math.min.apply(null, rates) + '%-' + Math.max.apply(null, rates) + '%' : '—';
-        var tierLabel = tierMode === 'grade' ? (tier + '（' + gradeTierMap[tier] + '）') : tier;
-        lines.push('| ' + tierLabel + ' | ' + stus.map(function(s) { return s.name; }).join('、') + ' | ' + stus.length + ' | ' + rateRange + ' |');
-    });
+    if (tierFallbackNote) lines.push(tierFallbackNote);
     lines.push('');
 
-    // Helper: format answer distribution
+    // ================================================
+    // Helper functions (used across all sections)
+    // ================================================
     function fmtAnswers(tier, itemName) {
         var agg = tierWeakAgg[tier] && tierWeakAgg[tier][itemName];
         if (!agg || !agg.answers) return '';
@@ -6349,7 +6955,6 @@ function generateSingleSubjectClassReport(classNames, subjectName, threshold, ti
         }).join(' ');
     }
 
-    // Helper: extract PDF text for an item (using PdfQuestionIndex)
     function extractPdfText(itemName, tierList) {
         var readyPdfs = (uploadedPdfs || []).filter(function(p) { return p && p.status === 'ready' && p.markdown; });
         if (!readyPdfs.length) return null;
@@ -6387,11 +6992,90 @@ function generateSingleSubjectClassReport(classNames, subjectName, threshold, ti
         return outLines.join('\n');
     }
 
-    // Section 2: Weak points
-    lines.push('## 二、各层失分要点');
+    function fmtStudentName(s) {
+        var label = s.name;
+        if (s.gradeTransition) {
+            label += '(' + s.gradeTransition + (s.flowStatus === 'up' ? '📈' : '⚠️') + ')';
+        }
+        return label;
+    }
+
+    // ================================================
+    // 一、教学效能与生态诊断 (仅当有对比批次)
+    // ================================================
+    if (hasCompare && ecoMetrics) {
+        lines.push('## 一、教学效能与生态诊断');
+        lines.push('');
+        lines.push('| 指标 | 本次 | 对比批次 | 变化趋势 |');
+        lines.push('|------|------|---------|---------|');
+        var curAvgStr = ecoMetrics.curClassAvg != null ? ecoMetrics.curClassAvg.toFixed(1) : '—';
+        var cmpAvgStr = ecoMetrics.cmpClassAvg != null ? ecoMetrics.cmpClassAvg.toFixed(1) : '—';
+        var avgTrend = (ecoMetrics.curClassAvg != null && ecoMetrics.cmpClassAvg != null) ? (ecoMetrics.curClassAvg >= ecoMetrics.cmpClassAvg ? '↗️' : '↘️') : '—';
+        lines.push('| 班级均分 | ' + curAvgStr + ' | ' + cmpAvgStr + ' | ' + avgTrend + ' |');
+        var valStr = ecoMetrics.valueAdd != null ? (ecoMetrics.valueAdd >= 0 ? '+' : '') + ecoMetrics.valueAdd.toFixed(1) : '—';
+        lines.push('| 增值评价（相对年级） | — | — | **' + valStr + '** |');
+        var curSdStr = ecoMetrics.curStdDev != null ? ecoMetrics.curStdDev.toFixed(1) : '—';
+        var cmpSdStr = ecoMetrics.cmpStdDev != null ? ecoMetrics.cmpStdDev.toFixed(1) : '—';
+        var sdWarning = '';
+        if (ecoMetrics.diffStdDev != null) {
+            sdWarning = ecoMetrics.diffStdDev > 0 ? '⚠️ 扩大（分化加剧）' : '✅ 缩小（分化缓解）';
+        }
+        lines.push('| 标准差（分化度） | ' + curSdStr + ' | ' + cmpSdStr + ' | ' + sdWarning + ' |');
+        lines.push('');
+    }
+
+    // ================================================
+    // 二/一、分层统计与层间流转
+    // ================================================
+    var secTierTitle = hasCompare ? '## 二、分层统计与层间流转' : '## 一、分层统计';
+    lines.push(secTierTitle);
+    lines.push('');
+    if (tierMode === 'grade') {
+        lines.push('分层依据：等级（A+ → 领先、A → 领先、B+ → 中上、B → 临界、C+ → 后进、C → 后进）');
+        lines.push('');
+    }
+    if (hasCompare) {
+        lines.push('> 学生姓名后的标记表示本次与对比批次的**等级流转**：📈 升级  ⚠️ 降级');
+        lines.push('');
+    }
+    lines.push('| 层次' + (tierMode === 'grade' ? '（对应等级）' : '') + ' | 学生 | 人数 | 得分率区间 |');
+    lines.push('|------' + (tierMode === 'grade' ? '------------' : '') + '|------|------|-----------|');
+    ['领先', '中上', '临界', '后进'].forEach(function(tier) {
+        var stus = tierStudents[tier] || [];
+        if (!stus.length) return;
+        var rates = stus.map(function(s) { return s.rate; }).filter(function(r) { return r !== null; });
+        var rateRange = rates.length ? Math.min.apply(null, rates) + '%-' + Math.max.apply(null, rates) + '%' : '—';
+        var tierLabel = tierMode === 'grade' ? (tier + '（' + gradeTierMap[tier] + '）') : tier;
+        var nameStr = stus.map(function(s) { return fmtStudentName(s); }).join('、');
+        lines.push('| ' + tierLabel + ' | ' + nameStr + ' | ' + stus.length + ' | ' + rateRange + ' |');
+    });
     lines.push('');
 
-    // 2a: Global pool (≤4 items, pool ≥3 tiers)
+    // ================================================
+    // 三/—、偏科拖累与提分性价比 (仅当有对比批次且有拖累学生)
+    // ================================================
+    if (hasCompare && dragStudents.length) {
+        lines.push('## 三、偏科拖累与提分性价比');
+        lines.push('');
+        lines.push('> 偏科度 = 单科年级排名比例 − 总分年级排名比例。正值表示单科落后于总盘。');
+        lines.push('');
+        lines.push('| 姓名 | 单科排名位次 | 总分排名位次 | 偏科度 | 诊断 |');
+        lines.push('|------|-------------|-------------|--------|------|');
+        dragStudents.forEach(function(d) {
+            var severity = d.gap >= 40 ? '🔴严重拖累总盘' : (d.gap >= 30 ? '🟠明显偏科' : '🟡轻度偏科');
+            lines.push('| ' + d.name + ' | ' + d.subjRankPct + '% | ' + d.totalRankPct + '% | +' + d.gap + '% | ' + severity + ' |');
+        });
+        lines.push('');
+    }
+
+    // ================================================
+    // 四/二、各层失分要点与认知归因
+    // ================================================
+    var secWeakTitle = hasCompare ? '## 四、各层失分要点与认知归因' : '## 二、各层失分要点';
+    lines.push(secWeakTitle);
+    lines.push('');
+
+    // 4a/2a: Global pool (≤4 items, pool ≥3 tiers)
     if (globalPool.length) {
         lines.push('### ⚠ 全层共有薄弱题目（≤4）');
         lines.push('');
@@ -6405,7 +7089,6 @@ function generateSingleSubjectClassReport(classNames, subjectName, threshold, ti
             lines.push('| ' + g.item + ' | ' + counts.join(' | ') + ' | ' + g.totalCount + ' |');
         });
         lines.push('');
-        // PDF + answer distribution for global items
         globalPool.forEach(function(g) {
             var pdfText = extractPdfText(g.item, allTiers);
             if (pdfText) { lines.push('#### ' + g.item + ' — 题目内容与选项分布'); lines.push(''); lines.push(pdfText); lines.push(''); }
@@ -6416,7 +7099,7 @@ function generateSingleSubjectClassReport(classNames, subjectName, threshold, ti
         }
     }
 
-    // 2b: Per-tier cascade selections (exclude global items)
+    // 4b/2b: Per-tier cascade selections (exclude global items)
     allTiers.forEach(function(tier) {
         var stus = tierStudents[tier] || [];
         if (!stus.length) return;
@@ -6441,14 +7124,13 @@ function generateSingleSubjectClassReport(classNames, subjectName, threshold, ti
             lines.push('| ' + itemName + ' | ' + a.count + '/' + stus.length + '人 | ' + avgRate + '% | ' + (fmtAnswers(tier, itemName) || '—') + ' |');
         });
         lines.push('');
-        // PDF extract
         selections.forEach(function(itemName) {
             var pdfText = extractPdfText(itemName, [tier]);
             if (pdfText) { lines.push('**' + itemName + '**'); lines.push(''); lines.push(pdfText); lines.push(''); }
         });
     });
 
-    // 2c: Class-wide weak items overview
+    // 4c/2c: Class-wide weak items overview
     if (Object.keys(classWideAgg).length) {
         var classWideWeakItems = Object.keys(classWideAgg).filter(function(itemName) {
             var a = classWideAgg[itemName];
@@ -6478,7 +7160,7 @@ function generateSingleSubjectClassReport(classNames, subjectName, threshold, ti
         }
     }
 
-    // 2d: Key students for targeted help (后进 + 临界 tiers)
+    // 4d/2d: Key students for targeted help (后进 + 临界 tiers)
     var helpStudents = Object.keys(studentWeakCounts).filter(function(name) {
         var tier = studentWeakCounts[name].tier;
         return tier === '后进' || tier === '临界';
@@ -6488,16 +7170,26 @@ function generateSingleSubjectClassReport(classNames, subjectName, threshold, ti
     if (helpStudents.length) {
         lines.push('### 🎯 重点帮扶学生（后进+临界层）');
         lines.push('');
-        lines.push('| 姓名 | 层次 | 失分题数 | 具体失分题号 |');
-        lines.push('|------|------|---------|-------------|');
+        lines.push('| 姓名 | 层次 | 等级流转 | 失分题数 | 具体失分题号 |');
+        lines.push('|------|------|---------|---------|-------------|');
         helpStudents.forEach(function(name) {
             var info = studentWeakCounts[name];
-            lines.push('| ' + name + ' | ' + info.tier + ' | ' + info.count + ' | ' + info.items.join('、') + ' |');
+            var stu = students.find(function(s) { return s.name === name; });
+            var flowTag = '';
+            if (stu && stu._gradeTransition) {
+                flowTag = stu._gradeTransition + (stu._flowStatus === 'up' ? '📈' : '⚠️');
+            } else {
+                flowTag = '—';
+            }
+            // Check if also in drag list
+            var dragMatch = dragStudents.find(function(d) { return d.name === name; });
+            var dragTag = dragMatch ? ' 🔴偏科' : '';
+            lines.push('| ' + name + dragTag + ' | ' + info.tier + ' | ' + flowTag + ' | ' + info.count + ' | ' + info.items.join('、') + ' |');
         });
         lines.push('');
     }
 
-    // 2e: Top-tier improvement direction
+    // 4e/2e: Top-tier improvement direction
     var leadingStudents = tierStudents['领先'] || [];
     if (leadingStudents.length) {
         var leadingWeakItems = Object.keys(classWideAgg).filter(function(itemName) {
@@ -6523,8 +7215,11 @@ function generateSingleSubjectClassReport(classNames, subjectName, threshold, ti
         }
     }
 
-    // Section 3: Class tier structure analysis & teaching suggestions
-    lines.push('## 三、班级分层结构分析与分层教学建议');
+    // ================================================
+    // 五/三、分层结构分析与前瞻建议
+    // ================================================
+    var secStructTitle = hasCompare ? '## 五、分层结构分析与前瞻建议' : '## 三、班级分层结构分析与分层教学建议';
+    lines.push(secStructTitle);
     lines.push('');
     lines.push('### 📊 班级分层结构分析（班级管理视角）');
     lines.push('');
@@ -6535,9 +7230,16 @@ function generateSingleSubjectClassReport(classNames, subjectName, threshold, ti
         if (!stus.length) return;
         var tierLabel = tierMode === 'grade' ? (tier + '（' + gradeTierMap[tier] + '）') : tier;
         var pct = Math.round(stus.length / students.length * 100);
-        lines.push('| ' + tierLabel + ' | ' + stus.length + ' | ' + pct + '% | ' + stus.map(function(s) { return s.name; }).join('、') + ' |');
+        var nameStr = stus.map(function(s) { return fmtStudentName(s); }).join('、');
+        lines.push('| ' + tierLabel + ' | ' + stus.length + ' | ' + pct + '% | ' + nameStr + ' |');
     });
     lines.push('');
+    if (hasCompare && ecoMetrics) {
+        var valDir = ecoMetrics.valueAdd >= 0 ? '正向产出' : '相对衰退';
+        var sdDir = ecoMetrics.diffStdDev > 0 ? '分化加剧' : '分化缓解';
+        lines.push('**教学效能提示**：增值评价为 **' + (ecoMetrics.valueAdd >= 0 ? '+' : '') + ecoMetrics.valueAdd.toFixed(1) + '**，教学处于「' + valDir + '」阶段；班级标准差变化提示 **' + sdDir + '**。');
+        lines.push('');
+    }
     lines.push('请从班级管理者角度分析：各层人数分布是否合理？哪些层需要重点关注？教学资源应如何向关键层倾斜？');
     lines.push('');
     lines.push('### 📝 分层教学建议');
@@ -6576,7 +7278,9 @@ document.getElementById('comprehensiveSubjBtn').addEventListener('click', async 
             .map(function(chip) { return chip.dataset.value; });
     }
     if (!classNames.length) { await showAlert('请至少选择一个班级'); return; }
-    var report = generateSingleSubjectClassReport(classNames, subjectName, threshold, tierMode);
+    var compareBatchId = document.getElementById('comprehensiveSubjCompareBatch')
+        ? document.getElementById('comprehensiveSubjCompareBatch').value : '';
+    var report = generateSingleSubjectClassReport(classNames, subjectName, threshold, tierMode, compareBatchId || null);
     if (!report) { await showAlert('生成失败，请检查数据'); return; }
     document.getElementById('comprehensivePlaceholder').style.display = 'none';
     document.getElementById('comprehensiveOutput').style.display = 'block';
@@ -7971,7 +8675,6 @@ setTimeout(async function() {
         o.textContent = p.name + (p.free ? ' 🆓' : '');
         provSel.appendChild(o);
     });
-    updateVisionModelList();
     loadVisionConfig();
     // Apply the loaded mode state to the UI
     var mode = document.getElementById('pdfParseMode').value;
@@ -9383,9 +10086,39 @@ setTimeout(function() {
     });
 }, 200);
 </script>
+<!-- 个人错题本弹窗 -->
+<div id="studentErrorNotebookModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:10001;justify-content:center;align-items:center;" onclick="if(event.target===this)closeErrorNotebookModal()">
+    <div style="background:#fff;border-radius:10px;max-width:900px;width:94%;max-height:85vh;overflow-y:auto;padding:20px;box-shadow:0 4px 20px rgba(0,0,0,0.3);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;position:sticky;top:0;background:#fff;z-index:1;padding-bottom:8px;border-bottom:2px solid #e74c3c;">
+            <h3 id="errorNotebookTitle" style="margin:0;font-size:17px;color:#c0392b;"></h3>
+            <button onclick="closeErrorNotebookModal()" style="background:none;border:none;font-size:28px;cursor:pointer;color:#999;line-height:1;">×</button>
+        </div>
+        <div id="errorNotebookBody" style="font-size:14px;line-height:1.8;"></div>
+    </div>
+</div>
+<script>
+function showErrorNotebookModal(title, htmlContent) {
+    var body = document.getElementById('errorNotebookBody');
+    document.getElementById('errorNotebookTitle').textContent = title;
+    body.innerHTML = htmlContent;
+    document.getElementById('studentErrorNotebookModal').style.display = 'flex';
+    if (typeof renderMathInElement !== 'undefined') {
+        renderMathInElement(body, {
+            delimiters: [
+                {left: '$$', right: '$$', display: true},
+                {left: '$', right: '$', display: false}
+            ],
+            throwOnError: false
+        });
+    }
+}
+function closeErrorNotebookModal() {
+    document.getElementById('studentErrorNotebookModal').style.display = 'none';
+}
+</script>
 <!-- 学生名单弹窗 -->
 <div id="studentListModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:10000;justify-content:center;align-items:center;" onclick="if(event.target===this)closeStudentListModal()">
-    <div style="background:#fff;border-radius:10px;max-width:500px;width:90%;max-height:80vh;overflow-y:auto;padding:20px;box-shadow:0 4px 20px rgba(0,0,0,0.3);">
+    <div style="background:#fff;border-radius:10px;max-width:700px;width:92%;max-height:80vh;overflow-y:auto;padding:20px;box-shadow:0 4px 20px rgba(0,0,0,0.3);">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
             <h3 id="studentListModalTitle" style="margin:0;font-size:16px;"></h3>
             <button onclick="closeStudentListModal()" style="background:none;border:none;font-size:24px;cursor:pointer;color:#999;line-height:1;">×</button>
