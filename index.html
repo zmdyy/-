@@ -5458,19 +5458,27 @@ function buildParsedSheetsFromAllBatches(classFilter) {
     DataPool.batches.forEach(b => {
         applyDuplicateDisplayNames(b.combinedStudentData || []);
         b.combinedStudentData.forEach(s => {
-            if (normFilter !== '__all__' && normalizeClass(String(s.class)) !== normFilter) return;
             const nk = String(getStudentDisplayName(s)).trim(); if (!nk) return;
             if (!allNames.has(nk)) allNames.set(nk, getStudentDisplayName(s));
         });
     });
     const nameKeys = Array.from(allNames.keys());
 
+    // Build class map for filtering display rows while keeping full-grade rankings
+    const studentClassMap = new Map();
+    DataPool.batches.forEach(function(b) {
+        (b.combinedStudentData || []).forEach(function(s) {
+            const nk = String(getStudentDisplayName(s)).trim();
+            if (nk && !studentClassMap.has(nk)) studentClassMap.set(nk, normalizeClass(String(s.class)));
+        });
+    });
+    const displayNameKeys = normFilter !== '__all__' ? nameKeys.filter(function(nk) { return studentClassMap.get(nk) === normFilter; }) : nameKeys;
+
     // Collect per-exam data
     const examData = DataPool.batches.map(b => {
         const tn = getTotalSubjectName(b.allSubjectHeaders) || (b.allSubjectHeaders.length ? b.allSubjectHeaders[0].name : '');
         const students = {};
         b.combinedStudentData.forEach(s => {
-            if (normFilter !== '__all__' && normalizeClass(String(s.class)) !== normFilter) return;
             const nk = String(getStudentDisplayName(s)).trim(); if (!nk) return;
             const totalScore = parseFloat(s.subjects[tn]?.score) || null;
             const scores = {};
@@ -5541,12 +5549,12 @@ function buildParsedSheetsFromAllBatches(classFilter) {
         return { total: totalAvg, subjects: subjAvgs };
     });
 
-    const totalRows = nameKeys.map(nk => {
+    const totalRows = displayNameKeys.map(nk => {
         const row = [allNames.get(nk)];
         rankPerExam.forEach(rpe => row.push(rpe.total.get(nk) ?? ''));
         return row;
     });
-    const totalScoreRows = nameKeys.map(nk => {
+    const totalScoreRows = displayNameKeys.map(nk => {
         const row = [allNames.get(nk)];
         examData.forEach(ed => { const s = ed.students[nk]; row.push(s ? s.total : ''); });
         return row;
@@ -5579,13 +5587,13 @@ function buildParsedSheetsFromAllBatches(classFilter) {
         subjFullMark[label] = v;
         return v;
     };
-    const radarRows = nameKeys.map(function(nk) {
+    const radarRows = displayNameKeys.map(function(nk) {
         var row = [allNames.get(nk)];
         radarCols.forEach(function(c) { row.push(lastSubj[c.id] ? (lastSubj[c.id].get(nk) ?? '') : ''); });
         return row;
     });
     // Score mode: compute rates (score / fullMark * 100), fallback to raw score
-    const radarRatesRows = nameKeys.map(function(nk) {
+    const radarRatesRows = displayNameKeys.map(function(nk) {
         var row = [allNames.get(nk)];
         var lastExam = examData[lastIdx];
         radarCols.forEach(function(c) {
@@ -5607,9 +5615,9 @@ function buildParsedSheetsFromAllBatches(classFilter) {
 
     const subjects = {}, subjectScores = {};
     RAW_SUBJ_IDS.forEach(id => {
-        const rows = nameKeys.map(nk => { const row = [allNames.get(nk)]; rankPerExam.forEach(rpe => row.push((rpe.subjects[id]||new Map()).get(nk) ?? '')); return row; });
+        const rows = displayNameKeys.map(nk => { const row = [allNames.get(nk)]; rankPerExam.forEach(rpe => row.push((rpe.subjects[id]||new Map()).get(nk) ?? '')); return row; });
         subjects[id] = { headers: ['姓名'].concat(examLabels), rows };
-        const sRows = nameKeys.map(nk => { const row = [allNames.get(nk)]; examData.forEach(ed => { const s = ed.students[nk]; row.push(s ? s.scores[id] : ''); }); return row; });
+        const sRows = displayNameKeys.map(nk => { const row = [allNames.get(nk)]; examData.forEach(ed => { const s = ed.students[nk]; row.push(s ? s.scores[id] : ''); }); return row; });
         subjectScores[id] = { headers: ['姓名'].concat(examLabels), rows: sRows };
     });
 
@@ -5618,7 +5626,7 @@ function buildParsedSheetsFromAllBatches(classFilter) {
         var subjRanks = rankPerExam[ei].subjects;
         return {
             label: ed.label,
-            rows: nameKeys.map(function(nk) {
+            rows: displayNameKeys.map(function(nk) {
                 var row = [allNames.get(nk)];
                 radarCols.forEach(function(c) { row.push(subjRanks[c.id] ? (subjRanks[c.id].get(nk) ?? '') : ''); });
                 return row;
@@ -5628,7 +5636,7 @@ function buildParsedSheetsFromAllBatches(classFilter) {
     var radarAllRates = examData.map(function(ed, ei) {
         return {
             label: ed.label,
-            rows: nameKeys.map(function(nk) {
+            rows: displayNameKeys.map(function(nk) {
                 var row = [allNames.get(nk)];
                 radarCols.forEach(function(c) {
                     var s = ed.students[nk];
@@ -6417,7 +6425,7 @@ document.getElementById('trendBatchPrintBtn').addEventListener('click', async fu
             btn.textContent = '准备 ' + (i+1) + '/' + total + ': ' + sName;
             ['totalRankChartContainer','radarChartContainer','chineseRankChart','mathRankChart','englishRankChart','physicsRankChart','historyRankChart','daofaRankChart','chemistryRankChart','bioGeoRankChart'].forEach(function(_id) { var _el = document.getElementById(_id); if (_el) _el.innerHTML = ''; });
             initTrendCharts(); trendRowIdx = i; updateTrendDisplay();
-            await new Promise(function(r) { setTimeout(r, 900); });
+            await new Promise(function(r) { setTimeout(r, 1200); });
             printContainer.appendChild(buildTrendPrintSheet(sName));
             if ((i+1) % 3 === 0) { if (window.gc) window.gc(); await new Promise(function(r) { setTimeout(r, 100); }); }
         }
@@ -11715,9 +11723,10 @@ function renderClassDiffHeatmap(stats, classNames, displaySubjects) {
         var matched = dataSource.filter(function(stu) {
             var sd = getSubjectDataByAlias(stu, subj);
             var score = sd ? parseFloat(sd.score) : NaN;
-            if (isNaN(score) || !score) return false;
+            if (isNaN(score)) return false;
             var rate = score / fm * 100;
-            return rate >= lo && rate < hi;
+            var isLastBucket = bi === numBuckets - 1;
+            return rate >= lo && (isLastBucket ? rate <= hi : rate < hi);
         }).sort(function(a, b) {
             var ca = a.class || '', cb = b.class || '';
             if (ca !== cb) return ca.localeCompare(cb, 'zh-CN');
