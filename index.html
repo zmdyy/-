@@ -9,28 +9,9 @@
     <script>if(typeof echarts==='undefined'){var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js';document.head.appendChild(s)}if(typeof XLSX==='undefined'){var s2=document.createElement('script');s2.src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';document.head.appendChild(s2)}</script>
     <link rel="stylesheet" href="katex.min.css">
     <script src="marked.min.js"></script>
+    <script src="pinyin-pro.js"></script>
     <script src="katex.min.js"></script>
     <script src="auto-render.min.js"></script>
-    <script>
-    (function() {
-        if (!window.marked || typeof window.marked.parse !== 'function') return;
-        var _orig = window.marked.parse;
-        var _prefix = 'MATHBLOCK' + Date.now() + Math.random().toString(36).slice(2, 8) + 'X';
-        window.marked.parse = function(text) {
-            if (typeof text !== 'string') return _orig.call(window.marked, text);
-            var blocks = [], idx = 0;
-            var safe = text.replace(/\$\$[\s\S]+?\$\$|\$[^$]*[\\_{}a-zA-Z^][^$]*\$/g, function(m) {
-                blocks.push(m);
-                return _prefix + (idx++) + 'Z';
-            });
-            var result = _orig.call(window.marked, safe);
-            for (var i = 0; i < blocks.length; i++) {
-                result = result.split(_prefix + i + 'Z').join(blocks[i]);
-            }
-            return result;
-        };
-    })();
-    </script>
     <style>
         /* ── Design System ──────────────────────────── */
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -146,9 +127,14 @@
         .filter-bar-select:focus, .filter-bar-input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(30,58,95,.1); }
         .student-ans-wrong { background: #fef2f2; color: var(--danger); border-radius: 4px; padding: 2px 7px; font-weight: 700; }
         .student-search-group { position: relative; display: inline-block; }
-        .student-suggest { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); max-height: 150px; overflow-y: auto; position: absolute; z-index: 1000; min-width: 120px; box-shadow: var(--shadow-lg); }
-        .student-suggest div { padding: 6px 12px; cursor: pointer; font-size: 13px; transition: background .15s; }
-        .student-suggest div:hover { background: var(--primary); color: #fff; }
+        .student-suggest { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); max-height: 210px; overflow-y: auto; position: absolute; z-index: 1000; min-width: 180px; width: 100%; box-shadow: var(--shadow-lg); }
+        .student-suggest-item { padding: 7px 12px; cursor: pointer; font-size: 13px; transition: background .15s; line-height: 1.35; }
+        .student-suggest-item:hover, .student-suggest-item.active { background: var(--primary); color: #fff; }
+        .student-suggest-item.empty { color: #999; cursor: default; }
+        .student-suggest-item.empty:hover { background: transparent; color: #999; }
+        .student-suggest-name { font-weight: 600; }
+        .student-suggest-meta { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
+        .student-suggest-item:hover .student-suggest-meta, .student-suggest-item.active .student-suggest-meta { color: rgba(255,255,255,.82); }
         .level-bar { margin: 16px 0; display: flex; align-items: center; gap: 10px; background: var(--bg); border-radius: var(--radius-sm); padding: 10px 16px; border: 1px solid var(--border); flex-wrap: wrap; }
         .level-bar label { font-weight: 600; font-size: 13px; color: var(--text-secondary); }
         .level-bar input { width: 55px; padding: 6px; border: 1px solid var(--border); border-radius: var(--radius-xs); }
@@ -1104,7 +1090,10 @@
     </div>
     <div class="controls">
         <div class="control-group"><label>学生姓名：</label>
-            <input type="text" id="nameSearch" placeholder="输入或选择姓名" list="studentNameList" style="width:160px;">
+            <div class="student-search-group" style="width:160px;">
+                <input type="text" id="nameSearch" placeholder="输入或选择姓名" list="studentNameList" style="width:160px;">
+                <div class="student-suggest" id="nameSearchSuggest" style="display:none;"></div>
+            </div>
             <datalist id="studentNameList"></datalist>
         </div>
         <div class="control-group"><label>排名范围：</label>
@@ -1300,7 +1289,10 @@
                  <div class="comp-card-desc">个体AI报告包</div>
                  <div class="comp-card-controls">
                     <div class="control-group"><label>姓名：</label>
-                        <input type="text" id="comprehensiveNameSearch" placeholder="输入姓名" list="comprehensiveNameList" style="width:100px;">
+                        <div class="student-search-group" style="width:100px;">
+                            <input type="text" id="comprehensiveNameSearch" placeholder="输入姓名" list="comprehensiveNameList" style="width:100px;">
+                            <div class="student-suggest" id="comprehensiveNameSuggest" style="display:none;"></div>
+                        </div>
                         <datalist id="comprehensiveNameList"></datalist>
                     </div>
                     <div class="control-group"><span>阈值：<b id="comprehensiveThresholdDisplay">0.60</b></span>
@@ -1502,7 +1494,10 @@
                  <div class="comp-card-desc">个体AI智能分析报告</div>
                  <div class="comp-card-controls">
                     <div class="control-group"><label>姓名：</label>
-                        <input type="text" id="smartNameSearch" placeholder="输入姓名" list="smartNameList" style="width:100px;">
+                        <div class="student-search-group" style="width:100px;">
+                            <input type="text" id="smartNameSearch" placeholder="输入姓名" list="smartNameList" style="width:100px;">
+                            <div class="student-suggest" id="smartNameSuggest" style="display:none;"></div>
+                        </div>
                         <datalist id="smartNameList"></datalist>
                     </div>
                     <div class="control-group"><span>阈值：<b id="smartThresholdDisplay">0.60</b></span>
@@ -1787,7 +1782,8 @@ function persistBatches() {
                 combinedStudentData: b.combinedStudentData,
                 allSubjectHeaders: b.allSubjectHeaders,
                 uploadedPdfs: pdfs,
-                uploadedFilesData: ufd
+                uploadedFilesData: ufd,
+                manualQuestionOverrides: b.manualQuestionOverrides
             };
         });
         var json = JSON.stringify(compact);
@@ -1895,6 +1891,222 @@ let trendEchartsInst = {};
 let trendRowIdx = 0;
 let trendDisplayMode = 'ranking';
 let collectiveThreshold = 60;
+let studentSearchIndex = [];
+let studentSearchBindingsInitialized = false;
+
+function normalizeSearchKeyword(text) {
+    return String(text || '').trim().toLowerCase().replace(/\s+/g, '');
+}
+function getPinyinTokens(text) {
+    var raw = String(text || '').trim();
+    if (!raw || typeof pinyinPro === 'undefined' || !pinyinPro || typeof pinyinPro.pinyin !== 'function') {
+        return { full: '', initials: '' };
+    }
+    try {
+        var full = pinyinPro.pinyin(raw, { toneType: 'none', type: 'array', nonZh: 'consecutive' }) || [];
+        var fullJoined = full.map(function(part) { return normalizeSearchKeyword(part); }).filter(Boolean).join('');
+        var initials = full.map(function(part) { return normalizeSearchKeyword(part).charAt(0); }).filter(Boolean).join('');
+        return { full: fullJoined, initials: initials };
+    } catch (e) {
+        return { full: '', initials: '' };
+    }
+}
+function buildStudentSearchIndex(data) {
+    var seen = new Set();
+    studentSearchIndex = (data || []).map(function(stu) {
+        if (!stu) return null;
+        var displayName = String(getStudentDisplayName(stu) || '').trim();
+        var rawName = String(stu.name || '').trim();
+        if (!displayName && !rawName) return null;
+        var dedupeKey = displayName || rawName;
+        if (seen.has(dedupeKey)) return null;
+        seen.add(dedupeKey);
+        var displayPinyin = getPinyinTokens(displayName);
+        var rawPinyin = rawName !== displayName ? getPinyinTokens(rawName) : displayPinyin;
+        var normalizedDisplay = normalizeSearchKeyword(displayName);
+        var normalizedRaw = normalizeSearchKeyword(rawName);
+        return {
+            student: stu,
+            displayName: displayName || rawName,
+            rawName: rawName || displayName,
+            className: String(stu.class || '').trim(),
+            normalizedDisplay: normalizedDisplay,
+            normalizedRaw: normalizedRaw,
+            fullPinyin: displayPinyin.full || rawPinyin.full || '',
+            initials: displayPinyin.initials || rawPinyin.initials || '',
+            rawFullPinyin: rawPinyin.full || '',
+            rawInitials: rawPinyin.initials || ''
+        };
+    }).filter(Boolean).sort(function(a, b) {
+        return a.displayName.localeCompare(b.displayName, 'zh-CN');
+    });
+}
+function scoreStudentSearchEntry(entry, keyword) {
+    if (!entry || !keyword) return -1;
+    if (entry.normalizedDisplay === keyword || entry.normalizedRaw === keyword) return 100;
+    if (entry.displayName === keyword || entry.rawName === keyword) return 98;
+    if (entry.normalizedDisplay.indexOf(keyword) === 0 || entry.normalizedRaw.indexOf(keyword) === 0) return 92;
+    if (entry.normalizedDisplay.indexOf(keyword) !== -1 || entry.normalizedRaw.indexOf(keyword) !== -1) return 86;
+    if (entry.fullPinyin === keyword || entry.rawFullPinyin === keyword) return 82;
+    if (entry.initials === keyword || entry.rawInitials === keyword) return 80;
+    if (entry.fullPinyin.indexOf(keyword) === 0 || entry.rawFullPinyin.indexOf(keyword) === 0) return 76;
+    if (entry.initials.indexOf(keyword) === 0 || entry.rawInitials.indexOf(keyword) === 0) return 74;
+    if (entry.fullPinyin.indexOf(keyword) !== -1 || entry.rawFullPinyin.indexOf(keyword) !== -1) return 68;
+    if (entry.initials.indexOf(keyword) !== -1 || entry.rawInitials.indexOf(keyword) !== -1) return 64;
+    return -1;
+}
+function searchStudents(keyword, options) {
+    var normalized = normalizeSearchKeyword(keyword);
+    if (!normalized) return [];
+    options = options || {};
+    var classFilter = options.classFilter;
+    var limit = options.limit || 20;
+    return studentSearchIndex.map(function(entry) {
+        if (classFilter && classFilter !== '__all__' && String(entry.className) !== String(classFilter)) return null;
+        var score = scoreStudentSearchEntry(entry, normalized);
+        if (score < 0) return null;
+        return { entry: entry, score: score };
+    }).filter(Boolean).sort(function(a, b) {
+        if (b.score !== a.score) return b.score - a.score;
+        return a.entry.displayName.localeCompare(b.entry.displayName, 'zh-CN');
+    }).slice(0, limit).map(function(item) { return item.entry; });
+}
+function resolveStudentSearchValue(value, options) {
+    var normalized = normalizeSearchKeyword(value);
+    if (!normalized) return null;
+    var matches = searchStudents(normalized, Object.assign({ limit: 5 }, options || {}));
+    if (!matches.length) return null;
+    var exact = matches.find(function(entry) {
+        return entry.displayName === value || entry.rawName === value || entry.normalizedDisplay === normalized || entry.normalizedRaw === normalized;
+    });
+    if (exact) return exact;
+    if (matches.length === 1) return matches[0];
+    return null;
+}
+function renderStudentSuggestList(suggestEl, matches) {
+    if (!suggestEl) return;
+    if (!matches.length) {
+        suggestEl.innerHTML = '<div class="student-suggest-item empty">无匹配</div>';
+        suggestEl.style.display = 'block';
+        return;
+    }
+    suggestEl.innerHTML = matches.map(function(entry, index) {
+        var pinyinMeta = [];
+        if (entry.fullPinyin) pinyinMeta.push(entry.fullPinyin);
+        if (entry.initials && entry.initials !== entry.fullPinyin) pinyinMeta.push(entry.initials);
+        var meta = [];
+        if (entry.className) meta.push(entry.className);
+        if (pinyinMeta.length) meta.push(pinyinMeta.join(' / '));
+        return '<div class="student-suggest-item' + (index === 0 ? ' active' : '') + '" data-display-name="' + escapeHtml(entry.displayName) + '">'
+            + '<div class="student-suggest-name">' + escapeHtml(entry.displayName) + '</div>'
+            + (meta.length ? '<div class="student-suggest-meta">' + escapeHtml(meta.join(' | ')) + '</div>' : '')
+            + '</div>';
+    }).join('');
+    suggestEl.style.display = 'block';
+}
+function hideStudentSuggest(suggestEl) {
+    if (!suggestEl) return;
+    suggestEl.style.display = 'none';
+    suggestEl.innerHTML = '';
+}
+function bindStudentSearchInput(config) {
+    var input = document.getElementById(config.inputId);
+    var suggest = document.getElementById(config.suggestId);
+    if (!input || !suggest || input.dataset.studentSearchBound) return;
+    input.dataset.studentSearchBound = '1';
+    input.addEventListener('input', function() {
+        if (typeof config.onInput === 'function') config.onInput(this.value);
+        var classFilter = typeof config.getClassFilter === 'function' ? config.getClassFilter() : null;
+        var matches = searchStudents(this.value, { classFilter: classFilter, limit: config.limit || 20 });
+        if (!this.value.trim()) {
+            hideStudentSuggest(suggest);
+            return;
+        }
+        renderStudentSuggestList(suggest, matches);
+    });
+    input.addEventListener('blur', function() {
+        setTimeout(function() { hideStudentSuggest(suggest); }, 200);
+    });
+    input.addEventListener('keydown', function(e) {
+        if (e.key !== 'Enter') return;
+        var classFilter = typeof config.getClassFilter === 'function' ? config.getClassFilter() : null;
+        var resolved = resolveStudentSearchValue(input.value, { classFilter: classFilter });
+        if (resolved) input.value = resolved.displayName;
+        if (typeof config.onEnter === 'function') config.onEnter(input.value, resolved);
+        hideStudentSuggest(suggest);
+    });
+    suggest.addEventListener('click', function(e) {
+        var item = e.target.closest('.student-suggest-item');
+        if (!item || item.classList.contains('empty')) return;
+        var displayName = item.dataset.displayName || item.textContent.trim();
+        input.value = displayName;
+        hideStudentSuggest(suggest);
+        if (typeof config.onSelect === 'function') config.onSelect(displayName);
+    });
+}
+function initStudentSearchBindings() {
+    if (studentSearchBindingsInitialized) return;
+    studentSearchBindingsInitialized = true;
+    bindStudentSearchInput({
+        inputId: 'nameSearch',
+        suggestId: 'nameSearchSuggest',
+        onInput: function(value) {
+            var hv = String(value || '').trim().length > 0;
+            document.getElementById('rankStart').disabled = hv;
+            document.getElementById('rankEnd').disabled = hv;
+        },
+        onEnter: function() { displayPersonalResults(); }
+    });
+    bindStudentSearchInput({
+        inputId: 'collectiveStudentQueryInput',
+        suggestId: 'collectiveStudentSuggest',
+        getClassFilter: function() { return document.getElementById('collectiveClassFilter').value; },
+        onEnter: function(value) { if (String(value || '').trim()) showCollectiveStudentDetail(String(value).trim()); },
+        onSelect: function(value) { showCollectiveStudentDetail(value); }
+    });
+    bindStudentSearchInput({
+        inputId: 'trendStudentSearch',
+        suggestId: 'trendStudentSuggest',
+        getClassFilter: function() {
+            var cls = document.getElementById('trendClassFilter');
+            return cls ? cls.value : '__all__';
+        },
+        onEnter: function(value) { selectTrendStudentByName(value); },
+        onSelect: function(value) { selectTrendStudentByName(value); }
+    });
+    bindStudentSearchInput({ inputId: 'comprehensiveNameSearch', suggestId: 'comprehensiveNameSuggest' });
+    bindStudentSearchInput({ inputId: 'smartNameSearch', suggestId: 'smartNameSuggest' });
+}
+function normalizeStudentSearchInputValue(inputId, options) {
+    var input = document.getElementById(inputId);
+    if (!input) return null;
+    var value = input.value.trim();
+    if (!value) return null;
+    var resolved = resolveStudentSearchValue(value, options || {});
+    if (resolved) {
+        input.value = resolved.displayName;
+        return resolved;
+    }
+    return null;
+}
+function selectTrendStudentByName(value) {
+    if (!DataPool.trendParsedSheets || !DataPool.trendParsedSheets.total) return false;
+    var resolved = resolveStudentSearchValue(value, {
+        classFilter: document.getElementById('trendClassFilter') ? document.getElementById('trendClassFilter').value : '__all__'
+    });
+    var targetName = resolved ? resolved.displayName : String(value || '').trim();
+    if (!targetName) return false;
+    var search = document.getElementById('trendStudentSearch');
+    if (search) search.value = targetName;
+    for (var i = 0; i < DataPool.trendParsedSheets.total.rows.length; i++) {
+        if (String(DataPool.trendParsedSheets.total.rows[i][0]) === String(targetName)) {
+            trendRowIdx = i;
+            updateTrendDisplay();
+            return true;
+        }
+    }
+    return false;
+}
 
 const DISTINCT_COLORS = ['#FFD700','#FFB6C1','#87CEFA','#90EE90','#DDA0DD','#FFA07A','#F0E68C','#E0FFFF','#FF6347','#C0C0C0','#98FB98','#AFEEEE','#DB7093','#FFE4B5','#B0C4DE','#FFDEAD','#5F9EA0','#D2B48C','#BC8F8F','#F4A460'];
 
@@ -3689,6 +3901,8 @@ function combineAllStudentData() {
 
 function updateStudentNameList(data) {
     const dl = document.getElementById('studentNameList'); dl.innerHTML = '';
+    buildStudentSearchIndex(data || []);
+    initStudentSearchBindings();
     if (!data.length) return;
     [...new Set(data.map(s => getStudentDisplayName(s)))].sort().forEach(n => { const o = document.createElement('option'); o.value = n; dl.appendChild(o); });
 }
@@ -3869,6 +4083,7 @@ function expandSubjectFullMarks(base) {
 //  PERSONAL ANALYSIS TAB (V44 core)
 // ============================================================
 function displayPersonalResults() {
+    normalizeStudentSearchInputValue('nameSearch');
     const rankingTableOutput = document.getElementById('rankingTableOutput');
     const aiOutput = document.getElementById('aiAnalysisOutput');
     const dataContent = document.getElementById('analysisDataContent');
@@ -4559,6 +4774,8 @@ function populateLevelCheckboxes() {
 }
 
 function showCollectiveStudentDetail(name) {
+    var resolved = resolveStudentSearchValue(name, { classFilter: document.getElementById('collectiveClassFilter') ? document.getElementById('collectiveClassFilter').value : '__all__' });
+    if (resolved) name = resolved.displayName;
     const fd = getCollectiveFilteredData();
     const ss = getSelectedSubject();
     const res = document.getElementById('collectiveStudentQueryResult');
@@ -4644,6 +4861,69 @@ function showQuestionLowStudents(title) {
 // ============================================================
 //  跨批次错题收集 & 个人错题本
 // ============================================================
+function normalizeInlineMathExpression(expr) {
+    return String(expr || '')
+        .replace(/\s+/g, ' ')
+        .replace(/\\([A-Za-z]+)\s+\{/g, '\\$1{')
+        .replace(/\s*_\s*/g, '_')
+        .replace(/\s*\^\s*/g, '^')
+        .replace(/\{\s+/g, '{')
+        .replace(/\s+\}/g, '}')
+        .trim();
+}
+
+function wrapInlineMath(expr) {
+    var normalized = normalizeInlineMathExpression(expr);
+    if (!normalized) return expr;
+    if (/^\$[\s\S]*\$$/.test(normalized)) return normalized;
+    return '$' + normalized.replace(/^\$+|\$+$/g, '') + '$';
+}
+
+function preprocessQuestionMarkdownForNotebook(text) {
+    if (!text) return '';
+    var placeholders = [];
+    var protectedText = String(text).replace(/\$\$[\s\S]*?\$\$|\$[^$\n]+\$/g, function(match) {
+        // Use placeholder tokens without underscores so later math rules do not treat them as subscripts.
+        var token = '@@PLACEHOLDER' + placeholders.length + '@@';
+        placeholders.push(match);
+        return token;
+    });
+
+    // Drop MinerU chart summary blocks that pollute question text in error notebooks.
+    protectedText = protectedText.replace(/<details>\s*<summary>\s*line\s+chart\s*<\/summary>[\s\S]*?<\/details>\s*/gi, '');
+    protectedText = protectedText.replace(/<summary>\s*line\s+chart\s*<\/summary>[\s\S]*?(?=<\/details>|\n##\s|\n\d+\.|\n题\s*\d+|$)/gi, '');
+
+    protectedText = protectedText.replace(/\\([A-Za-z]+)\s+\{/g, '\\$1{');
+
+    protectedText = protectedText.replace(/\b([A-Za-z\u4e00-\u9fa5]+)\s*_\s*\{([^{}\n]+)\}/g, function(_, base, sub) {
+        return wrapInlineMath(base + '_{' + sub + '}');
+    });
+    protectedText = protectedText.replace(/\b([A-Za-z\u4e00-\u9fa5]+)\s*_\s*([A-Za-z0-9\u4e00-\u9fa5]+)/g, function(_, base, sub) {
+        return wrapInlineMath(base + '_' + sub);
+    });
+    protectedText = protectedText.replace(/\b([A-Za-z\u4e00-\u9fa5]+)\s*\^\s*\{([^{}\n]+)\}/g, function(_, base, sup) {
+        return wrapInlineMath(base + '^{' + sup + '}');
+    });
+    protectedText = protectedText.replace(/\b([A-Za-z\u4e00-\u9fa5]+)\s*\^\s*([A-Za-z0-9+\-]+)/g, function(_, base, sup) {
+        return wrapInlineMath(base + '^' + sup);
+    });
+    protectedText = protectedText.replace(/\\[A-Za-z]+(?:\{[^{}\n]*\})*(?:[_^](?:\{[^{}\n]+\}|[A-Za-z0-9\u4e00-\u9fa5]+))*/g, function(match) {
+        return wrapInlineMath(match);
+    });
+
+    protectedText = protectedText.replace(/\$([^$\n]+)\$\s*=\s*\$([^$\n]+)\$/g, function(_, left, right) {
+        return wrapInlineMath(left + ' = ' + right);
+    });
+    protectedText = protectedText.replace(/\$([^$\n]+)\$\s*([,，、；;。])/g, function(_, inner, punct) {
+        return wrapInlineMath(inner) + punct;
+    });
+
+    placeholders.forEach(function(match, idx) {
+        protectedText = protectedText.replace('@@PLACEHOLDER' + idx + '@@', match);
+    });
+    return protectedText.replace(/\n{3,}/g, '\n\n').trim();
+}
+
 function collectStudentErrorsFromAllBatches(studentName) {
     var result = { allErrors: [], totalErrors: 0, subjectCount: 0, batchCount: 0 };
     if (!DataPool.batches || !DataPool.batches.length) return result;
@@ -4690,6 +4970,320 @@ function collectStudentErrorsFromAllBatches(studentName) {
     return result;
 }
 
+function cleanExtractedQuestionText(text) {
+    if (!text) return '';
+    return String(text).split(/\r?\n/).filter(function(l) {
+        var t = l.replace(/[\s\u00A0\u200B-\u200D\uFEFF]+/g, '');
+        return !(/^\d{1,3}$/.test(t) && t !== '');
+    }).join('\n').trim();
+}
+
+function hasQuestionImageMarkup(text) {
+    return /!\[[^\]]*\]\([^)]*\)|<img\b[^>]*>/i.test(String(text || ''));
+}
+
+function hasQuestionFigureCue(text) {
+    return /(如图|图示|图甲|图乙|图丙|图丁|下列图|如图所示|甲|乙|丙|丁)/.test(String(text || ''));
+}
+
+function stripQuestionLineForMatch(line) {
+    return compactDigits(String(line || '').replace(/^(\*\*)+|(\*\*)+$/g, '').trim());
+}
+
+function getQuestionMajorNumberFromEntry(entry, itemKey) {
+    if (entry && entry.major != null) return entry.major;
+    if (entry && entry.number) {
+        var m = String(entry.number).match(/^(\d{1,3})/);
+        if (m) return m[1];
+    }
+    var refs = expandItemRefs(itemKey);
+    for (var i = 0; i < refs.length; i++) {
+        var ref = refs[i];
+        if (ref && ref.major != null) return ref.major;
+    }
+    var plain = String(itemKey || '').match(/(\d{1,3})/);
+    return plain ? plain[1] : null;
+}
+
+function isQuestionBoundaryLine(line, currentMajorNum) {
+    var t = stripQuestionLineForMatch(line);
+    if (!t) return false;
+    if (/^##\s*第\s*\d+\s*页/.test(t)) return true;
+    var m = t.match(/^(\d{1,3})\s*[\.、．)]/) || t.match(/^第\s*(\d{1,3})\s*题/);
+    if (m) return String(m[1]) !== String(currentMajorNum || '');
+    return false;
+}
+
+function expandQuestionSliceWithNearbyMedia(lines, startLine, endLine, itemKey, baseText, entry) {
+    if (!lines || !lines.length) return cleanExtractedQuestionText(baseText);
+    var cleanedBase = cleanExtractedQuestionText(baseText);
+    if (hasQuestionImageMarkup(cleanedBase)) return cleanedBase;
+    var currentMajorNum = getQuestionMajorNumberFromEntry(entry, itemKey);
+    var figureDriven = hasQuestionFigureCue(cleanedBase);
+    var beforeLimit = figureDriven ? 10 : 6;
+    var afterLimit = figureDriven ? 16 : 10;
+    var start = Math.max(0, startLine);
+    var end = Math.min(lines.length - 1, endLine);
+    for (var i = start - 1, steps = 0; i >= 0 && steps < beforeLimit; i--, steps++) {
+        if (isQuestionBoundaryLine(lines[i], currentMajorNum)) break;
+        start = i;
+    }
+    for (var j = end + 1, steps2 = 0; j < lines.length && steps2 < afterLimit; j++, steps2++) {
+        if (isQuestionBoundaryLine(lines[j], currentMajorNum)) break;
+        end = j;
+    }
+    var candidate = cleanExtractedQuestionText(lines.slice(start, end + 1).join('\n'));
+    if (!candidate) return cleanedBase;
+    if (hasQuestionImageMarkup(candidate)) return candidate;
+    return cleanedBase;
+}
+
+function mergeQuestionEntriesByLine(entries) {
+    var valid = (entries || []).filter(function(entry) {
+        return entry && entry.text && typeof entry.startLine === 'number' && typeof entry.endLine === 'number';
+    }).sort(function(a, b) {
+        return a.startLine - b.startLine || a.endLine - b.endLine;
+    });
+    if (!valid.length) return [];
+    var merged = [Object.assign({}, valid[0])];
+    for (var i = 1; i < valid.length; i++) {
+        var cur = valid[i];
+        var last = merged[merged.length - 1];
+        if (cur.startLine <= last.endLine + 1) {
+            last.endLine = Math.max(last.endLine, cur.endLine);
+            last.text = String(last.text || '') + '\n\n' + String(cur.text || '');
+            last.matchType = last.matchType || cur.matchType;
+        } else {
+            merged.push(Object.assign({}, cur));
+        }
+    }
+    return merged;
+}
+
+function getMajorQuestionNumberFromItem(itemKey) {
+    var refs = expandItemRefs(itemKey);
+    var compositeRefs = refs.filter(function(ref) { return ref && ref.major != null && ref.minor != null; });
+    if (!compositeRefs.length) return null;
+    var major = compositeRefs[0].major;
+    if (compositeRefs.some(function(ref) { return ref.major !== major; })) return null;
+    return major;
+}
+
+function buildQuestionContextSummary(text, maxLines, maxChars) {
+    var lineLimit = Math.max(1, maxLines || 6);
+    var charLimit = Math.max(80, maxChars || 320);
+    var lines = String(text || '').split(/\r?\n/);
+    var out = [];
+    var usedLines = 0;
+    var usedChars = 0;
+    var truncated = false;
+    for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        var trimmed = String(line || '').trim();
+        if (!trimmed && !out.length) continue;
+        var displayLen = trimmed.replace(/!\[[^\]]*\]\([^)]*\)/g, '[图]').replace(/<[^>]+>/g, '').length;
+        var nextLines = trimmed ? (usedLines + 1) : usedLines;
+        var nextChars = usedChars + displayLen;
+        if ((trimmed && nextLines > lineLimit) || (trimmed && nextChars > charLimit)) {
+            truncated = true;
+            break;
+        }
+        out.push(line);
+        if (trimmed) {
+            usedLines = nextLines;
+            usedChars = nextChars;
+        }
+    }
+    while (out.length && !String(out[out.length - 1] || '').trim()) out.pop();
+    var summary = out.join('\n').trim();
+    if (truncated && summary) summary += '\n\n> ……（展开查看完整题目）';
+    return summary;
+}
+
+function countQuestionSummaryLines(text) {
+    return String(text || '').split(/\r?\n/).filter(function(line) {
+        return !!String(line || '').trim();
+    }).length;
+}
+
+function normalizeQuestionCompareText(text) {
+    return String(text || '').replace(/\n\s*>\s*……（展开查看完整题目）\s*$/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function findMajorQuestionContextRange(lines, majorNum, focusStartLine, focusEndLine) {
+    if (!lines || !lines.length || majorNum == null) return null;
+    var majorPatterns = [
+        new RegExp('^' + majorNum + '\\s*[\\.、．)]'),
+        new RegExp('^第\\s*' + majorNum + '\\s*题'),
+        new RegExp('^' + majorNum + '[（(]'),
+        new RegExp('^' + majorNum + '\\)')
+    ];
+    var start = -1;
+    var scanFrom = Math.min(typeof focusStartLine === 'number' ? focusStartLine : lines.length - 1, lines.length - 1);
+    for (var i = scanFrom; i >= 0; i--) {
+        var t = compactDigits(String(lines[i] || '').replace(/^(\*\*)+|(\*\*)+$/g, '').trim());
+        if (!t) continue;
+        if (/^##\s*第\s*\d+\s*页/.test(t)) break;
+        if (majorPatterns.some(function(p) { return p.test(t); })) {
+            start = i;
+            break;
+        }
+        if (/^(\d{1,3})\s*[\.、．)]/.test(t) || /^第\s*\d+\s*题/.test(t)) {
+            var m = t.match(/^(\d{1,3})/) || t.match(/^第\s*(\d{1,3})\s*题/);
+            if (m && String(m[1]) !== String(majorNum)) break;
+        }
+    }
+    if (start < 0) return null;
+    var end = Math.max(start, typeof focusEndLine === 'number' ? focusEndLine : start);
+    for (var j = end + 1; j < lines.length; j++) {
+        var t2 = compactDigits(String(lines[j] || '').replace(/^(\*\*)+|(\*\*)+$/g, '').trim());
+        if (!t2) continue;
+        if (/^##\s*第\s*\d+\s*页/.test(t2)) { end = j - 1; break; }
+        if (/^(\d{1,3})\s*[\.、．)]/.test(t2) || /^第\s*\d+\s*题/.test(t2)) {
+            var m2 = t2.match(/^(\d{1,3})/) || t2.match(/^第\s*(\d{1,3})\s*题/);
+            if (m2 && String(m2[1]) !== String(majorNum)) { end = j - 1; break; }
+        }
+        end = j;
+    }
+    return { startLine: start, endLine: Math.max(start, end) };
+}
+
+function getSummarySourceFromFullQuestion(lines, range, majorNum) {
+    if (!range) return '';
+    var slice = lines.slice(range.startLine, range.endLine + 1);
+    var firstSubIdx = -1;
+    for (var i = 0; i < slice.length; i++) {
+        var t = compactDigits(String(slice[i] || '').replace(/^(\*\*)+|(\*\*)+$/g, '').trim());
+        if (!t) continue;
+        if (/^[（(]\s*1\s*[）)]/.test(t) || new RegExp('^' + majorNum + '[（(]\s*1\s*[）)]').test(t)) {
+            firstSubIdx = i;
+            break;
+        }
+    }
+    if (firstSubIdx > 0) return slice.slice(0, firstSubIdx).join('\n').trim();
+    if (firstSubIdx === 0) return '';
+    return slice.join('\n').trim();
+}
+
+function getSummarySourceBeforeSelectedSubQuestion(lines, range, cutLineExclusive) {
+    if (!range) return '';
+    var endLine = Math.min(range.endLine, Math.max(range.startLine, (typeof cutLineExclusive === 'number' ? cutLineExclusive - 1 : range.endLine)));
+    if (endLine < range.startLine) return '';
+    return lines.slice(range.startLine, endLine + 1).join('\n').trim();
+}
+
+function isSectionBoundaryLine(line) {
+    var t = String(line || '').trim();
+    if (!t) return false;
+    return /^(主题[一二三四五六七八九十0-9]+|专题[一二三四五六七八九十0-9]+|模块[一二三四五六七八九十0-9]+|单元[一二三四五六七八九十0-9]+|项目[一二三四五六七八九十0-9]+|工程实践|生活实践|综合实践)/.test(t);
+}
+
+function extractNearbyLeadContext(lines, focusStartLine, majorNum) {
+    if (!lines || !lines.length || typeof focusStartLine !== 'number' || focusStartLine <= 0) return '';
+    var start = Math.max(0, focusStartLine - 20);
+    var collected = [];
+    var nonEmptyCount = 0;
+    for (var i = focusStartLine - 1; i >= start; i--) {
+        var raw = String(lines[i] || '');
+        var t = compactDigits(raw.replace(/^(\*\*)+|(\*\*)+$/g, '').trim());
+        if (/^##\s*第\s*\d+\s*页/.test(t)) break;
+        if (isSectionBoundaryLine(raw)) break;
+        if (/^(\d{1,3})\s*[\.、．)]/.test(t) || /^第\s*\d+\s*题/.test(t)) {
+            var m = t.match(/^(\d{1,3})/) || t.match(/^第\s*(\d{1,3})\s*题/);
+            if (m && String(m[1]) !== String(majorNum)) break;
+        }
+        collected.unshift(raw);
+        if (String(raw || '').trim()) nonEmptyCount++;
+        if (nonEmptyCount >= 8) break;
+    }
+    return collected.join('\n').trim();
+}
+
+function extractQuestionContextFromPdf(batch, subjectName, itemKey, focusText) {
+    var majorNum = getMajorQuestionNumberFromItem(itemKey);
+    if (majorNum == null || !batch || !batch.uploadedPdfs || !batch.uploadedPdfs.length) {
+        return { hasParentContext: false, summaryText: '', fullText: '' };
+    }
+    var subjectPdfs = batch.uploadedPdfs.filter(function(p) {
+        if (p.status !== 'ready' || !p.markdown) return false;
+        if (p.detectedSubject) return pdfSubjectMatches(p.detectedSubject, subjectName);
+        return true;
+    });
+    var normalizedFocus = normalizeQuestionCompareText(cleanExtractedQuestionText(focusText));
+    var refs = expandItemRefs(itemKey);
+    var compositeRefs = refs.filter(function(ref) { return ref && ref.major != null && ref.minor != null; });
+    var hasMultiCompositeFocus = compositeRefs.length > 1 && compositeRefs.every(function(ref) { return ref.major === compositeRefs[0].major; });
+    for (var i = 0; i < subjectPdfs.length; i++) {
+        var p = subjectPdfs[i];
+        var qi = ensurePdfQuestionIndex(p);
+        var focusEntries = findPdfQuestionEntries(qi, itemKey);
+        var focusEntry = focusEntries.length ? focusEntries[0] : null;
+        var earliestFocusStartLine = focusEntries.length ? Math.min.apply(null, focusEntries.map(function(entry) {
+            return typeof entry.startLine === 'number' ? entry.startLine : Number.MAX_SAFE_INTEGER;
+        })) : null;
+        var majorEntry = qi && qi.findByNumber ? qi.findByNumber(String(majorNum)) : null;
+        var lines = p.markdown.split(/\r?\n/);
+        var fullText = majorEntry && majorEntry.text ? cleanExtractedQuestionText(majorEntry.text) : '';
+        if (majorEntry && fullText) {
+            fullText = expandQuestionSliceWithNearbyMedia(lines, majorEntry.startLine, majorEntry.endLine, itemKey, fullText, majorEntry);
+        }
+        if ((!fullText || normalizeQuestionCompareText(fullText) === normalizedFocus) && focusEntry) {
+            var fullRange = findMajorQuestionContextRange(lines, majorNum, focusEntry.startLine, focusEntry.endLine);
+            if (fullRange) fullText = expandQuestionSliceWithNearbyMedia(lines, fullRange.startLine, fullRange.endLine, itemKey, lines.slice(fullRange.startLine, fullRange.endLine + 1).join('\n'), focusEntry);
+        }
+        if (!fullText) continue;
+        var summarySource = '';
+        if (focusEntry) {
+            var range = findMajorQuestionContextRange(lines, majorNum, focusEntry.startLine, focusEntry.endLine);
+            if (hasMultiCompositeFocus && earliestFocusStartLine != null) {
+                summarySource = getSummarySourceBeforeSelectedSubQuestion(lines, range, earliestFocusStartLine);
+            } else {
+                summarySource = getSummarySourceFromFullQuestion(lines, range, majorNum);
+            }
+        }
+        if (!summarySource && focusEntry) {
+            summarySource = extractNearbyLeadContext(lines, focusEntry.startLine, majorNum);
+        }
+        if (!summarySource) summarySource = fullText;
+        summarySource = cleanExtractedQuestionText(summarySource);
+        var summaryText = buildQuestionContextSummary(summarySource, 6, 320);
+        if (!summaryText) continue;
+        var normalizedSummary = normalizeQuestionCompareText(summaryText);
+        var normalizedFull = normalizeQuestionCompareText(fullText);
+        if ((!normalizedSummary || normalizedSummary === normalizedFocus) && focusEntry) {
+            var nearbyLead = cleanExtractedQuestionText(extractNearbyLeadContext(lines, focusEntry.startLine, majorNum));
+            var normalizedLead = normalizeQuestionCompareText(nearbyLead);
+            if (normalizedLead && normalizedLead !== normalizedFocus) {
+                summaryText = buildQuestionContextSummary(nearbyLead, 6, 320);
+                normalizedSummary = normalizeQuestionCompareText(summaryText);
+                if (normalizedFull === normalizedFocus) fullText = nearbyLead + '\n\n' + focusText;
+                normalizedFull = normalizeQuestionCompareText(fullText);
+            }
+        }
+        if (!normalizedSummary || normalizedSummary === normalizedFocus || normalizedFull === normalizedFocus) continue;
+        return {
+            hasParentContext: true,
+            summaryText: summaryText,
+            fullText: fullText,
+            canExpand: normalizedSummary !== normalizedFull,
+            summaryLineCount: countQuestionSummaryLines(summaryText),
+            sourceFileName: p.fileName
+        };
+    }
+    return { hasParentContext: false, summaryText: '', fullText: '' };
+}
+
+function toggleQuestionContext(fullId, btnId) {
+    var fullEl = document.getElementById(fullId);
+    var btn = document.getElementById(btnId);
+    if (!fullEl) return;
+    var summaryEl = document.getElementById(fullId + '-summary');
+    var nextShow = fullEl.style.display === 'none' || fullEl.style.display === '';
+    fullEl.style.display = nextShow ? 'block' : 'none';
+    if (summaryEl) summaryEl.style.display = nextShow ? 'none' : 'block';
+    if (btn) btn.textContent = nextShow ? '收起完整题目' : '展开完整题目';
+}
+
 function extractQuestionTextFromPdf(batch, subjectName, itemKey) {
     if (!batch.uploadedPdfs || !batch.uploadedPdfs.length) return '';
     var refs = expandItemRefs(itemKey);
@@ -4706,6 +5300,7 @@ function extractQuestionTextFromPdf(batch, subjectName, itemKey) {
     var foundText = '';
     subjectPdfs.forEach(function(p) {
         if (foundText) return;
+        var lines = p.markdown.split(/\r?\n/);
         var qi = ensurePdfQuestionIndex(p);
         var entries = findPdfQuestionEntries(qi, itemKey);
         if (multiCompositeMajor != null && entries.length < compositeRefs.length) {
@@ -4713,17 +5308,23 @@ function extractQuestionTextFromPdf(batch, subjectName, itemKey) {
             if (majorEntry && majorEntry.text) entries = [{ text: majorEntry.text, matchType: 'major-full' }];
         }
         if (!entries.length) {
-            var lines = p.markdown.split(/\r?\n/);
             var fb = findTextByItemFallback(lines, itemKey);
             if (fb) entries = [{ text: fb, matchType: 'fallback' }];
         }
         if (entries.length) {
-            foundText = entries.map(function(entry) { return entry && entry.text ? entry.text : ''; }).filter(Boolean).join('\n\n');
-            // Remove isolated digit lines (page numbers, line refs like "11", "22", "31")
-            foundText = foundText.split(/\r?\n/).filter(function(l) {
-                var t = l.replace(/[\s\u00A0\u200B-\u200D\uFEFF]+/g, '');
-                return !(/^\d{1,3}$/.test(t) && t !== '');
-            }).join('\n').trim();
+            var processedEntries = entries;
+            if (multiCompositeMajor != null) {
+                processedEntries = mergeQuestionEntriesByLine(entries).map(function(entry) {
+                    return entry && entry.text ? cleanExtractedQuestionText(entry.text) : '';
+                }).filter(Boolean);
+            } else {
+                processedEntries = entries.map(function(entry) {
+                    if (!entry || !entry.text) return '';
+                    return expandQuestionSliceWithNearbyMedia(lines, entry.startLine, entry.endLine, itemKey, entry.text, entry);
+                }).filter(Boolean);
+            }
+            foundText = processedEntries.join('\n\n');
+            foundText = cleanExtractedQuestionText(foundText);
         }
     });
     return foundText;
@@ -4787,13 +5388,37 @@ function showPersonalErrorNotebook(studentName) {
             html += '<span>你的答案：<b style="color:#e74c3c;">' + escapeHtml(e.studentAnswer || '(空白)') + '</b></span>';
             html += '<span>正确答案：<b style="color:#16a34a;">' + escapeHtml(e.correctAnswer || '-') + '</b></span>';
             html += '</div>';
-            // Question text from PDF
+            // Question text from PDF with manual override (Plan A)
             var batch = DataPool.batches.find(function(b) { return b.id === e.batchId; });
             if (batch) {
                 var qText = extractQuestionTextFromPdf(batch, e.subjectName, e.itemName);
+                var contextInfo = extractQuestionContextFromPdf(batch, e.subjectName, e.itemName, qText);
+                var cId = 'qtext-' + e.batchId + '-' + e.subjectName.replace(/[^a-z0-9]/gi,'') + '-' + e.itemName.replace(/[^a-z0-9]/gi,'_');
+                var ctxFullId = 'qctxfull-' + e.batchId + '-' + e.subjectName.replace(/[^a-z0-9]/gi,'') + '-' + e.itemName.replace(/[^a-z0-9]/gi,'_');
+                var ctxToggleId = 'qctxtoggle-' + e.batchId + '-' + e.subjectName.replace(/[^a-z0-9]/gi,'') + '-' + e.itemName.replace(/[^a-z0-9]/gi,'_');
+                var useInlineContext = !!(contextInfo && contextInfo.hasParentContext && contextInfo.summaryText && contextInfo.summaryLineCount <= 2);
+                if (contextInfo && contextInfo.hasParentContext && contextInfo.summaryText && !useInlineContext) {
+                    var renderedSummary = (typeof marked !== 'undefined') ? marked.parse(preprocessQuestionMarkdownForNotebook(contextInfo.summaryText)) : escapeHtml(contextInfo.summaryText);
+                    html += '<div style="margin-top:8px;font-size:12px;font-weight:700;color:#475569;display:flex;align-items:center;gap:6px;flex-wrap:wrap;"><span>题目背景摘要</span>' + (contextInfo.sourceFileName ? '<span style="font-weight:400;color:#9ca3af;">来自 ' + escapeHtml(contextInfo.sourceFileName) + '</span>' : '') + '</div>';
+                    html += '<div id="' + ctxFullId + '-summary" class="markdown-body" style="margin-top:6px;padding:8px 12px;background:#eff6ff;border-radius:6px;border-left:3px solid #60a5fa;max-height:220px;overflow-y:auto;">' + renderedSummary + '</div>';
+                    if (contextInfo.canExpand && contextInfo.fullText) {
+                        var renderedFull = (typeof marked !== 'undefined') ? marked.parse(preprocessQuestionMarkdownForNotebook(contextInfo.fullText)) : escapeHtml(contextInfo.fullText);
+                        html += '<div class="qnote-noexport" style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap;">';
+                        html += '<button id="' + ctxToggleId + '" onclick="toggleQuestionContext(\'' + ctxFullId + '\',\'' + ctxToggleId + '\')" style="font-size:11px;padding:2px 8px;border:1px solid #bfdbfe;border-radius:4px;background:#fff;cursor:pointer;color:#1d4ed8;">展开完整题目</button>';
+                        html += '</div>';
+                        html += '<div id="' + ctxFullId + '" style="display:none;margin-top:6px;">';
+                        html += '<div class="markdown-body" style="padding:8px 12px;background:#f8fafc;border-radius:6px;border-left:3px solid #94a3b8;max-height:320px;overflow-y:auto;">' + renderedFull + '</div>';
+                        html += '</div>';
+                    }
+                }
                 if (qText) {
-                    var renderedQ = (typeof marked !== 'undefined') ? marked.parse(qText) : escapeHtml(qText);
-                    html += '<div class="markdown-body" style="margin-top:8px;padding:8px 12px;background:#f9fafb;border-radius:6px;border-left:3px solid #6366f1;max-height:300px;overflow-y:auto;">' + renderedQ + '</div>';
+                    var mergedQText = qText;
+                    if (useInlineContext) mergedQText = contextInfo.summaryText + '\n\n---\n\n' + qText;
+                    var renderedQ = (typeof marked !== 'undefined') ? marked.parse(preprocessQuestionMarkdownForNotebook(mergedQText)) : escapeHtml(mergedQText);
+                    if (contextInfo && contextInfo.hasParentContext && !useInlineContext) {
+                        html += '<div style="margin-top:8px;font-size:12px;font-weight:700;color:#4338ca;">当前错题小问</div>';
+                    }
+                    html += '<div class="markdown-body" style="margin-top:6px;padding:8px 12px;background:#f9fafb;border-radius:6px;border-left:3px solid #6366f1;max-height:300px;overflow-y:auto;" id="' + cId + '">' + renderedQ + '</div>';
                 }
             }
             html += '</div>';
@@ -5074,6 +5699,10 @@ function refreshTrendTab() {
     renderTrendClassFilter();
     var classFilter = document.getElementById('trendClassFilter')?.value || '__all__';
     DataPool.trendParsedSheets = buildParsedSheetsFromAllBatches(classFilter);
+    var currentSearch = document.getElementById('trendStudentSearch');
+    if (currentSearch && currentSearch.value.trim()) {
+        normalizeStudentSearchInputValue('trendStudentSearch', { classFilter: classFilter });
+    }
     if (!DataPool.trendParsedSheets || !DataPool.trendParsedSheets.total || !DataPool.trendParsedSheets.total.rows.length) {
         document.getElementById('trendStudentName').textContent = '请先保存多个批次';
         return;
@@ -5689,11 +6318,6 @@ document.getElementById('pdfFileInput').addEventListener('change', async functio
 
 // Personal analysis
 document.getElementById('filterBtn').addEventListener('click', displayPersonalResults);
-document.getElementById('nameSearch').addEventListener('input', function() {
-    const hv = this.value.trim().length > 0;
-    document.getElementById('rankStart').disabled = hv;
-    document.getElementById('rankEnd').disabled = hv;
-});
 document.getElementById('searchContextRange').addEventListener('input', function() { document.getElementById('rangeValueDisplay').textContent = this.value + ' 名'; });
 document.getElementById('weakRateThreshold').addEventListener('input', function() { document.getElementById('weakRateThresholdDisplay').textContent = Number(this.value).toFixed(2); });
 document.getElementById('copyAnalysisBtn').addEventListener('click', function() {
@@ -5715,30 +6339,7 @@ document.getElementById('collectiveSubjectFilter').addEventListener('change', ()
 document.getElementById('applyCollectiveThresholdBtn').addEventListener('click', () => { collectiveThreshold = +document.getElementById('collectiveThresholdInput').value || 0; renderCollectiveTables(); });
 document.getElementById('collectiveRankApplyBtn').addEventListener('click', renderRankedAnalysis);
 document.getElementById('levelApplyBtn').addEventListener('click', renderLevelAnalysis);
-document.getElementById('clearCollectiveStudentBtn').addEventListener('click', () => { document.getElementById('collectiveStudentQueryInput').value = ''; document.getElementById('collectiveStudentQueryResult').innerHTML = ''; });
-document.getElementById('collectiveStudentQueryInput').addEventListener('input', function() {
-    const kw = this.value.trim();
-    const fd = buildCollectiveDataFromCombined();
-    const sg = document.getElementById('collectiveStudentSuggest');
-    if (!kw || !fd.nameField) { sg.style.display = 'none'; return; }
-    const sc = document.getElementById('collectiveClassFilter').value;
-    const filtered = fd.data.filter(r => { if (sc && r[fd.classField] != sc) return false; return String(r[fd.nameField]||'').indexOf(kw) !== -1; }).map(r => r[fd.nameField]);
-    const set = [...new Set(filtered)].slice(0, 20);
-    if (!set.length) sg.innerHTML = '<div style="color:#aaa;">无匹配</div>';
-    else sg.innerHTML = set.map(v => `<div>${v}</div>`).join('');
-    sg.style.display = 'block';
-});
-document.getElementById('collectiveStudentSuggest').addEventListener('click', function(e) {
-    if (e.target.tagName === 'DIV') {
-        document.getElementById('collectiveStudentQueryInput').value = e.target.textContent;
-        this.style.display = 'none';
-        showCollectiveStudentDetail(e.target.textContent);
-    }
-});
-document.getElementById('collectiveStudentQueryInput').addEventListener('blur', () => setTimeout(() => { document.getElementById('collectiveStudentSuggest').style.display = 'none'; }, 200));
-document.getElementById('collectiveStudentQueryInput').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') { if (this.value.trim()) showCollectiveStudentDetail(this.value.trim()); document.getElementById('collectiveStudentSuggest').style.display = 'none'; }
-});
+document.getElementById('clearCollectiveStudentBtn').addEventListener('click', () => { document.getElementById('collectiveStudentQueryInput').value = ''; document.getElementById('collectiveStudentQueryResult').innerHTML = ''; hideStudentSuggest(document.getElementById('collectiveStudentSuggest')); });
 
 // Score distribution chart
 document.getElementById('intervalSelect').addEventListener('change', renderScoreDistChart);
@@ -5770,36 +6371,6 @@ trendCustomEls.forEach(function(id) {
 document.getElementById('trendClassFilter').addEventListener('change', function() { if (DataPool.batches.length) refreshTrendTab(); });
 document.getElementById('trendPrevStudent').addEventListener('click', () => { if (trendRowIdx > 0) { trendRowIdx--; updateTrendDisplay(); } });
 document.getElementById('trendNextStudent').addEventListener('click', () => { if (DataPool.trendParsedSheets && trendRowIdx < DataPool.trendParsedSheets.total.rows.length - 1) { trendRowIdx++; updateTrendDisplay(); } });
-document.getElementById('trendStudentSearch').addEventListener('input', function() {
-    const kw = this.value.trim().toLowerCase();
-    const sg = document.getElementById('trendStudentSuggest');
-    if (!kw || !DataPool.trendParsedSheets || !DataPool.trendParsedSheets.total) { sg.style.display = 'none'; return; }
-    const filtered = DataPool.trendParsedSheets.total.rows.filter(r => String(r[0]||'').toLowerCase().includes(kw)).slice(0, 15);
-    if (!filtered.length) sg.innerHTML = '<div style="color:#aaa;">无匹配</div>';
-    else sg.innerHTML = filtered.map(r => `<div>${r[0]}</div>`).join('');
-    sg.style.display = 'block';
-});
-document.getElementById('trendStudentSuggest').addEventListener('click', function(e) {
-    if (e.target.tagName === 'DIV') {
-        document.getElementById('trendStudentSearch').value = e.target.textContent;
-        this.style.display = 'none';
-        if (DataPool.trendParsedSheets) {
-            for (let i = 0; i < DataPool.trendParsedSheets.total.rows.length; i++) {
-                if (String(DataPool.trendParsedSheets.total.rows[i][0]) === e.target.textContent) { trendRowIdx = i; updateTrendDisplay(); break; }
-            }
-        }
-    }
-});
-document.getElementById('trendStudentSearch').addEventListener('blur', () => setTimeout(() => { document.getElementById('trendStudentSuggest').style.display = 'none'; }, 200));
-document.getElementById('trendStudentSearch').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter' && DataPool.trendParsedSheets) {
-        const name = this.value.trim();
-        for (let i = 0; i < DataPool.trendParsedSheets.total.rows.length; i++) {
-            if (String(DataPool.trendParsedSheets.total.rows[i][0]) === name) { trendRowIdx = i; updateTrendDisplay(); break; }
-        }
-        document.getElementById('trendStudentSuggest').style.display = 'none';
-    }
-});
 // Trend: Print single student
 document.getElementById('trendPrintBtn').addEventListener('click', async function() {
     if (!DataPool.trendParsedSheets) return;
@@ -7014,7 +7585,7 @@ function setReportHorizontalBarOption(chart, cfg) {
 }
 
 function getReportPieOption(title, data, colors) {
-    return { color: colors || getSmartChartPalette(Math.max((data || []).length, 5)), title: getReportChartTitle(title), tooltip: { trigger: 'item' }, legend: { bottom: 0, textStyle: { color: REPORT_CHART_THEME.axis, fontSize: 11 } }, series: [{ type: 'pie', radius: ['44%', '68%'], center: ['50%', '52%'], data: data || [], label: { formatter: '{b}\n{c}人', color: REPORT_CHART_THEME.text, fontSize: 11, fontWeight: 700 }, itemStyle: { borderColor: '#fff', borderWidth: 2 } }] };
+    return { color: colors || getSmartChartPalette(Math.max((data || []).length, 5)), title: getReportChartTitle(title), tooltip: { trigger: 'item' }, legend: { bottom: 0, textStyle: { color: REPORT_CHART_THEME.axis, fontSize: 11 } }, series: [{ type: 'pie', radius: ['44%', '68%'], center: ['50%', '48%'], data: data || [], label: { formatter: '{b}\n{c}人', color: REPORT_CHART_THEME.text, fontSize: 11, fontWeight: 700 }, itemStyle: { borderColor: '#fff', borderWidth: 2 } }] };
 }
 
 function renderSubjectTeachingReadableReport(classNames, subjectName, compareBatchId, tierMode) {
@@ -9175,6 +9746,7 @@ document.getElementById('comprehensiveThreshold').addEventListener('input', func
     document.getElementById('comprehensiveThresholdDisplay').textContent = Number(this.value).toFixed(2);
 });
 document.getElementById('comprehensiveGenerateBtn').addEventListener('click', async function() {
+    normalizeStudentSearchInputValue('comprehensiveNameSearch');
     var name = document.getElementById('comprehensiveNameSearch').value.trim();
     if (!name) { await showAlert('请先输入学生姓名'); return; }
     var threshold = parseFloat(document.getElementById('comprehensiveThreshold').value) || 0.6;
@@ -10270,6 +10842,7 @@ var syncSmart = function(smartId, targetId) {
 };
 
 document.getElementById('smartIndividualBtn').addEventListener('click', async function() {
+    normalizeStudentSearchInputValue('smartNameSearch');
     var name = document.getElementById('smartNameSearch').value.trim();
     if (!name) { await showAlert('请先输入学生姓名'); return; }
     var threshold = parseFloat(document.getElementById('smartThreshold').value) || 0.6;
@@ -13367,18 +13940,46 @@ async function exportErrorNotebookWord() {
         var temp = document.createElement('div');
         temp.style.cssText = 'position:fixed;left:-9999px;top:0;width:700px;z-index:-1;font-size:14px;line-height:1.8;';
         temp.innerHTML = body.innerHTML;
+        // Strip editor controls / preview panes from export
+        var noExport = temp.querySelectorAll('.qnote-noexport');
+        for (var ni = 0; ni < noExport.length; ni++) noExport[ni].remove();
         document.body.appendChild(temp);
         await new Promise(function(r) { setTimeout(r, 50); });
-        var katexEls = temp.querySelectorAll('.katex');
-        for (var i = 0; i < katexEls.length; i++) {
+        var katexDisplayEls = temp.querySelectorAll('.katex-display');
+        for (var i = 0; i < katexDisplayEls.length; i++) {
             try {
-                var canvas = await html2canvas(katexEls[i], { scale: 2, backgroundColor: null, useCORS: true });
+                var canvas = await html2canvas(katexDisplayEls[i], { scale: 2, backgroundColor: null, useCORS: true });
                 var dataUrl = canvas.toDataURL('image/png');
                 var img = document.createElement('img');
                 img.src = dataUrl;
-                img.style.cssText = 'max-width:100%;height:auto;vertical-align:middle;display:inline;';
-                katexEls[i].parentNode.replaceChild(img, katexEls[i]);
+                img.style.cssText = 'max-width:100%;height:auto;vertical-align:middle;display:block;margin:6px 0;';
+                katexDisplayEls[i].parentNode.replaceChild(img, katexDisplayEls[i]);
             } catch(e) { console.warn('KaTeX截图失败:', e); }
+        }
+        var katexInlineEls = Array.from(temp.querySelectorAll('.katex')).filter(function(el) {
+            return !el.closest('.katex-display');
+        });
+        for (var ki = 0; ki < katexInlineEls.length; ki++) {
+            try {
+                var canvasInline = await html2canvas(katexInlineEls[ki], { scale: 2, backgroundColor: null, useCORS: true });
+                var dataUrlInline = canvasInline.toDataURL('image/png');
+                var inlineImg = document.createElement('img');
+                inlineImg.src = dataUrlInline;
+                inlineImg.style.cssText = 'height:0.5cm;width:auto;max-width:none;vertical-align:middle;display:inline;';
+                katexInlineEls[ki].parentNode.replaceChild(inlineImg, katexInlineEls[ki]);
+            } catch(e) { console.warn('行内KaTeX截图失败:', e); }
+        }
+        // Convert markdown body <img> tags to html2canvas screenshots for Word compatibility
+        var mdImgEls = temp.querySelectorAll('.markdown-body img');
+        for (var mi = 0; mi < mdImgEls.length; mi++) {
+            try {
+                var canvas2 = await html2canvas(mdImgEls[mi], { scale: 2, backgroundColor: null, useCORS: true });
+                var dataUrl2 = canvas2.toDataURL('image/png');
+                var newImg = document.createElement('img');
+                newImg.src = dataUrl2;
+                newImg.style.cssText = 'max-width:100%;height:auto;vertical-align:middle;display:inline;';
+                mdImgEls[mi].parentNode.replaceChild(newImg, mdImgEls[mi]);
+            } catch(e) { console.warn('题干图片截图失败:', e); }
         }
         var content = temp.innerHTML;
         document.body.removeChild(temp);
