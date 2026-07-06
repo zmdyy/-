@@ -52,10 +52,21 @@
         }
         .container { max-width: 1600px; margin: 0 auto; background: var(--surface); border-radius: 14px; box-shadow: 0 4px 24px rgba(0,0,0,.06),0 1px 3px rgba(0,0,0,.04); padding: 28px; }
         h1 { text-align: center; margin-bottom: 20px; color: var(--primary); padding-bottom: 14px; font-size: 1.5rem; font-weight: 700; letter-spacing: .04em; border-bottom: 2px solid var(--border); }
-        .tab-nav { display: flex; gap: 2px; margin-bottom: 24px; background: var(--bg); border-radius: var(--radius); padding: 4px; }
-        .tab-nav button { flex: 1; padding: 10px 14px; border: none; background: transparent; border-radius: var(--radius-sm); cursor: pointer; font-size: 14px; font-weight: 600; color: var(--text-tertiary); transition: var(--transition); position: relative; }
-        .tab-nav button.active { background: var(--surface); color: var(--primary); box-shadow: var(--shadow); }
-        .tab-nav button:hover:not(.active) { color: var(--text-secondary); background: rgba(255,255,255,.6); }
+        .tab-nav { display: flex; gap: 0; margin-bottom: 20px; background: transparent; border-bottom: 2px solid var(--border); padding: 0; position: relative; }
+        .tab-nav button { flex: 1; padding: 11px 12px 9px; border: none; background: transparent; border-radius: var(--radius-sm) var(--radius-sm) 0 0; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text-tertiary); transition: all .25s cubic-bezier(.4,0,.2,1); position: relative; letter-spacing: .02em; animation: tabEnter .35s ease both; }
+        .tab-nav button::after { content: ''; position: absolute; bottom: -2px; left: 50%; width: 0; height: 3px; background: var(--primary); border-radius: 3px 3px 0 0; transition: all .3s cubic-bezier(.4,0,.2,1); transform: translateX(-50%); }
+        .tab-nav button.active { background: var(--primary); color: #fff; box-shadow: 0 4px 14px rgba(30,58,95,.28); font-weight: 700; letter-spacing: .04em; }
+        .tab-nav button.active::after { width: 70%; }
+        .tab-nav button:hover:not(.active) { color: var(--primary); background: rgba(30,58,95,.06); transform: translateY(-1px); }
+        @keyframes tabEnter { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+        .tab-nav button:nth-child(1) { animation-delay: .02s; }
+        .tab-nav button:nth-child(2) { animation-delay: .06s; }
+        .tab-nav button:nth-child(3) { animation-delay: .10s; }
+        .tab-nav button:nth-child(4) { animation-delay: .14s; }
+        .tab-nav button:nth-child(5) { animation-delay: .18s; }
+        .tab-nav button:nth-child(6) { animation-delay: .22s; }
+        .tab-nav button:nth-child(7) { animation-delay: .26s; }
+        .tab-nav button:nth-child(8) { animation-delay: .30s; }
 
         .tab-panel { display: none; }
         .tab-panel.active { display: block; animation: fadeSlideIn .3s ease; }
@@ -416,7 +427,8 @@
         }
         @media (max-width: 768px) {
             .upload-area-container { flex-direction: column; }
-            .tab-nav { flex-direction: column; }
+            .tab-nav { overflow-x:auto; border-bottom-width:1px; }
+            .tab-nav button { flex:0 0 auto; min-width:fit-content; font-size:12px; padding:10px 10px 8px; white-space:nowrap; }
             .trend-charts, .subject-charts { grid-template-columns: 1fr; }
         }
         ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -463,6 +475,37 @@
         .subj-class-chip:hover { border-color:var(--primary-light); background:#f0f4ff; }
         .subj-class-chip.active { background:var(--primary); color:#fff; border-color:var(--primary); }
         .subj-class-chip.active:hover { background:var(--primary-light); }
+        .analysis-nav-layout { display:flex; gap:20px; align-items:flex-start; margin-top:12px; }
+        .analysis-section-nav { width:220px; flex-shrink:0; position:sticky; top:16px; display:flex; flex-direction:column; gap:3px; padding:14px 10px; background:linear-gradient(180deg, #fafcff 0%, #f3f6fb 100%); border:1px solid var(--border); border-radius:var(--radius); box-shadow:inset 0 1px 0 rgba(255,255,255,.8), var(--shadow); max-height:calc(100vh - 32px); overflow:auto; }
+        .analysis-section-nav-title { font-size:13px; font-weight:700; color:var(--primary); padding:2px 8px 10px; margin-bottom:6px; border-bottom:2px solid var(--primary); letter-spacing:.06em; position:relative; }
+        .analysis-section-nav-title::before { content:''; position:absolute; bottom:-2px; left:0; width:28px; height:2px; background:linear-gradient(90deg, var(--primary-light), var(--primary)); border-radius:2px; }
+        .analysis-nav-item { display:block; width:100%; text-align:left; border:none; border-left:4px solid transparent; background:transparent; color:var(--text-secondary); border-radius:0 var(--radius-sm) var(--radius-sm) 0; padding:10px 12px; font-size:13px; font-weight:500; line-height:1.35; cursor:pointer; transition:all .2s cubic-bezier(.4,0,.2,1); margin-bottom:1px; animation:navItemEnter .4s ease both; }
+        .analysis-nav-item:nth-child(2) { animation-delay: .04s; }
+        .analysis-nav-item:nth-child(3) { animation-delay: .08s; }
+        .analysis-nav-item:nth-child(4) { animation-delay: .12s; }
+        .analysis-nav-item:nth-child(5) { animation-delay: .16s; }
+        .analysis-nav-item:nth-child(6) { animation-delay: .20s; }
+        .analysis-nav-item:nth-child(7) { animation-delay: .24s; }
+        .analysis-nav-item:hover { color:var(--primary); background:#f0f4ff; border-left-color:#b8cce8; padding-left:14px; }
+        .analysis-nav-item.active { color:var(--primary); background:linear-gradient(90deg, #e8f0fe 0%, transparent 100%); border-left-color:var(--primary); font-weight:600; box-shadow:inset 0 0 0 1px rgba(30,58,95,.06); }
+        @keyframes navItemEnter { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: translateX(0); } }
+        @keyframes sectionPulse { 0% { box-shadow: 0 0 0 0 rgba(30,58,95,.28); } 50% { box-shadow: 0 0 0 10px rgba(30,58,95,.06); } 100% { box-shadow: 0 0 0 0 rgba(30,58,95,0); } }
+        .analysis-nav-top { margin-top:auto; border-top:1px solid var(--border); padding-top:10px; font-size:12px; color:var(--text-tertiary); border-left-color:transparent !important; border-radius:var(--radius-sm); background:rgba(255,255,255,.55); backdrop-filter:blur(6px); transition:all .2s ease; }
+        .analysis-nav-top:hover { color:var(--primary); background:rgba(240,244,255,.8); border-left-color:var(--primary-light) !important; transform:translateY(-2px); }
+        .analysis-content { flex:1; min-width:0; }
+        .analysis-anchor-section { scroll-margin-top:18px; }
+        .analysis-anchor-section.analysis-section-pulse { animation: sectionPulse .7s ease-out; border-radius:var(--radius); }
+        @media (max-width: 900px) {
+            .analysis-nav-layout { display:block; }
+            .analysis-section-nav { position:static; width:100%; max-height:none; flex-direction:row; overflow-x:auto; margin-bottom:14px; gap:6px; background:linear-gradient(90deg, #fafcff 0%, #f3f6fb 100%); padding:10px; }
+            .analysis-section-nav-title { flex:0 0 auto; border-bottom:none; border-right:2px solid var(--primary); padding:4px 10px 4px 0; margin:0 6px 0 0; }
+            .analysis-section-nav-title::before { display:none; }
+            .analysis-nav-item { flex:0 0 auto; width:auto; white-space:nowrap; border-left:none; border-bottom:3px solid transparent; border-radius:var(--radius-sm) var(--radius-sm) 0 0; animation:none; padding:8px 12px; }
+            .analysis-nav-item.active { border-left-color:transparent; border-bottom-color:var(--primary); background:transparent; box-shadow:none; }
+            .analysis-nav-item:hover { border-left-color:transparent; padding-left:12px; }
+            .analysis-nav-top { margin-top:0; border-top:none; border-left:1px solid var(--border) !important; padding-top:0; padding-left:14px; background:transparent; backdrop-filter:none; }
+            .analysis-nav-top:hover { transform:none; background:rgba(240,244,255,.5); }
+        }
         details { margin-bottom: 18px; }
         details summary { cursor: pointer; font-weight: 600; color: var(--text-primary); padding: 8px 0; font-size: .95rem; transition: var(--transition); }
         details summary:hover { color: var(--primary); }
@@ -889,8 +932,20 @@
         <span style="font-weight:bold;margin-right:4px;">对比批次：</span>
     </div>
 
+    <div class="analysis-nav-layout" data-analysis-nav="class-diff">
+        <nav class="analysis-section-nav" aria-label="多维展示章节导航">
+            <div class="analysis-section-nav-title">多维展示</div>
+            <button type="button" class="analysis-nav-item active" data-analysis-target="classDiffMeanSection">各班均分统计</button>
+            <button type="button" class="analysis-nav-item" data-analysis-target="classDiffHeatmapSection">得分率热力图</button>
+            <button type="button" class="analysis-nav-item" data-analysis-target="classDiffGradeSection">等级分布统计</button>
+            <button type="button" class="analysis-nav-item" data-analysis-target="classDiffRankSection">排序与名次段</button>
+            <button type="button" class="analysis-nav-item" data-analysis-target="classDiffBoxSection">成绩分布箱线图</button>
+            <button type="button" class="analysis-nav-item analysis-nav-top" data-analysis-top="true">↑ 回到顶部</button>
+        </nav>
+        <div class="analysis-content">
+
     <!-- 各班级各科及总分均分统计 -->
-    <div class="statistics-section" id="classDiffMeanSection" style="display:none;">
+    <div class="statistics-section analysis-anchor-section" id="classDiffMeanSection" data-analysis-section="classDiffMeanSection" style="display:none;">
         <h3 style="font-size:1.2em;margin-bottom:10px;">各班级各科及总分均分统计</h3>
         <div class="scroll-container" style="max-height:400px;">
             <table id="classDiffMeanTable" class="stats-table"></table>
@@ -905,7 +960,7 @@
     </div>
 
     <!-- 各科目得分率分布热力图 -->
-    <div class="statistics-section" id="classDiffHeatmapSection" style="display:none;margin-top:16px;">
+    <div class="statistics-section analysis-anchor-section" id="classDiffHeatmapSection" data-analysis-section="classDiffHeatmapSection" style="display:none;margin-top:16px;">
         <h3 style="font-size:1.2em;margin-bottom:10px;">各科目得分率分布热力图</h3>
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
             <label style="font-size:13px;font-weight:bold;">班级：</label>
@@ -930,7 +985,7 @@
     </div>
 
     <!-- 等级分布统计 -->
-    <div class="statistics-section" id="classDiffGradeSection" style="display:none;margin-top:16px;">
+    <div class="statistics-section analysis-anchor-section" id="classDiffGradeSection" data-analysis-section="classDiffGradeSection" style="display:none;margin-top:16px;">
         <h3 style="font-size:1.2em;margin-bottom:10px;">等级分布统计</h3>
         <div id="classDiffGradePanel">
             <div id="classDiffGradeTableContainer" class="scroll-container" style="max-height:300px;"></div>
@@ -942,7 +997,7 @@
     </div>
 
     <!-- 排序与名次段分布统计 -->
-    <div class="statistics-section" id="classDiffRankSection" style="display:none;margin-top:16px;">
+    <div class="statistics-section analysis-anchor-section" id="classDiffRankSection" data-analysis-section="classDiffRankSection" style="display:none;margin-top:16px;">
         <h3 style="font-size:1.2em;margin-bottom:10px;">排序与名次段分布统计</h3>
         <div class="filter-stats-bar">
             <div class="filter-bar-item">
@@ -967,7 +1022,7 @@
     </div>
 
     <!-- 成绩分布箱线图 -->
-    <div class="statistics-section" id="classDiffBoxSection" style="display:none;margin-top:16px;">
+    <div class="statistics-section analysis-anchor-section" id="classDiffBoxSection" data-analysis-section="classDiffBoxSection" style="display:none;margin-top:16px;">
         <h3 style="font-size:1.2em;margin-bottom:10px;">成绩分布箱线图</h3>
         <div style="margin-bottom:8px;display:flex;align-items:center;gap:8px;">
             <label style="font-weight:bold;font-size:13px;">科目：</label>
@@ -998,6 +1053,8 @@
     </div>
 
     <div class="no-data" id="classDiffPlaceholder">请先在「上传管理」中上传Excel数据</div>
+        </div>
+    </div>
 </div>
 
 <!-- ===== 集体分析 ===== -->
@@ -1007,7 +1064,18 @@
         <span>当前批次：<span class="batch-label" id="batchLabelCollective">未加载</span></span>
         <span class="batch-count" id="batchCountCollective"></span>
     </div>
-    <div class="statistics-section">
+    <div class="analysis-nav-layout" data-analysis-nav="collective">
+        <nav class="analysis-section-nav" aria-label="集体分析章节导航">
+            <div class="analysis-section-nav-title">集体分析</div>
+            <button type="button" class="analysis-nav-item active" data-analysis-target="collectiveQuestionSection">小题统计</button>
+            <button type="button" class="analysis-nav-item" data-analysis-target="collectiveLevelSection">等级分析</button>
+            <button type="button" class="analysis-nav-item" data-analysis-target="collectiveRankSection">名次区间分析</button>
+            <button type="button" class="analysis-nav-item" data-analysis-target="collectiveStudentSection">学生查询</button>
+            <button type="button" class="analysis-nav-item" data-analysis-target="collectiveScoreDistSection">成绩分布图</button>
+            <button type="button" class="analysis-nav-item analysis-nav-top" data-analysis-top="true">↑ 回到顶部</button>
+        </nav>
+        <div class="analysis-content">
+    <div class="statistics-section analysis-anchor-section" id="collectiveQuestionSection" data-analysis-section="collectiveQuestionSection">
         <div class="filter-stats-bar">
             <div class="filter-bar-item"><span class="filter-bar-label">筛选班级：</span>
                 <select id="collectiveClassFilter" class="filter-bar-select"></select>
@@ -1036,6 +1104,7 @@
 
     <div id="questionStudentsResult" style="margin:8px 0;display:none;"></div>
 
+    <div class="analysis-anchor-section" id="collectiveLevelSection" data-analysis-section="collectiveLevelSection">
     <div class="level-bar">
         <label>等级分析：</label>
         <span id="levelCheckboxContainer" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
@@ -1044,7 +1113,9 @@
         <button class="filter-btn" id="levelApplyBtn">分析所选等级</button>
     </div>
     <div id="levelAnalysisResult"></div>
+    </div>
 
+    <div class="analysis-anchor-section" id="collectiveRankSection" data-analysis-section="collectiveRankSection">
     <div class="rank-bar">
         <div class="rank-range-box">
             <label>名次区间：</label>
@@ -1055,7 +1126,9 @@
         <span id="rankedStudentNames" style="color:#555;font-size:12px;"></span>
     </div>
     <div id="rankedAnalysisResult"></div>
+    </div>
 
+    <div class="analysis-anchor-section" id="collectiveStudentSection" data-analysis-section="collectiveStudentSection">
     <div class="search-bar" style="margin:10px 0;">
         <span style="font-weight:bold;">学生查询：</span>
         <div class="student-search-group">
@@ -1065,8 +1138,9 @@
         <button class="upload-btn small" id="clearCollectiveStudentBtn" style="margin-left:4px;">清除</button>
     </div>
     <div id="collectiveStudentQueryResult"></div>
+    </div>
 
-    <div style="margin-top:24px;">
+    <div class="analysis-anchor-section" id="collectiveScoreDistSection" data-analysis-section="collectiveScoreDistSection" style="margin-top:24px;">
         <h3 style="margin-bottom:8px;">成绩分布图</h3>
         <div style="margin-bottom:6px;">
             <label>分数区间：</label>
@@ -1079,6 +1153,8 @@
         </div>
         <div id="scoreDistChart" style="width:100%;height:400px;"></div>
     </div>
+        </div>
+    </div>
 </div>
 
 <!-- ===== 个人分析 ===== -->
@@ -1088,6 +1164,15 @@
         <span>当前批次：<span class="batch-label" id="batchLabelPersonal">未加载</span></span>
         <span class="batch-count" id="batchCountPersonal"></span>
     </div>
+    <div class="analysis-nav-layout" data-analysis-nav="personal">
+        <nav class="analysis-section-nav" aria-label="个人分析章节导航">
+            <div class="analysis-section-nav-title">个人分析</div>
+            <button type="button" class="analysis-nav-item active" data-analysis-target="rankingTableOutput">查询结果/排名表</button>
+            <button type="button" class="analysis-nav-item" data-analysis-target="aiAnalysisOutput">AI分析数据</button>
+            <button type="button" class="analysis-nav-item" data-analysis-target="crossExamSection">跨次前十分析</button>
+            <button type="button" class="analysis-nav-item analysis-nav-top" data-analysis-top="true">↑ 回到顶部</button>
+        </nav>
+        <div class="analysis-content">
     <div class="controls">
         <div class="control-group"><label>学生姓名：</label>
             <div class="student-search-group" style="width:160px;">
@@ -1111,7 +1196,10 @@
             <input type="range" id="weakRateThreshold" min="0.1" max="0.9" value="0.6" step="0.01" style="width:100px;">
         </div>
     </div>
-    <div id="aiAnalysisOutput" style="display:none;">
+    <div class="results-section analysis-anchor-section" id="rankingTableOutput" data-analysis-section="rankingTableOutput">
+        <div class="no-data">请先在「上传管理」中上传Excel数据，然后搜索姓名或设置排名范围点击查询</div>
+    </div>
+    <div id="aiAnalysisOutput" class="analysis-anchor-section" data-analysis-section="aiAnalysisOutput" style="display:none;">
         <div class="ai-analysis-container">
             <h3>AI分析数据（JSON已生成，点击复制）</h3>
             <pre id="analysisDataContent"></pre>
@@ -1122,12 +1210,9 @@
             </div>
         </div>
     </div>
-    <div class="results-section" id="rankingTableOutput">
-        <div class="no-data">请先在「上传管理」中上传Excel数据，然后搜索姓名或设置排名范围点击查询</div>
-    </div>
 
     <!-- ===== 跨次前十分析 ===== -->
-    <div id="crossExamSection" style="margin-top:24px;display:none;">
+    <div id="crossExamSection" class="analysis-anchor-section" data-analysis-section="crossExamSection" style="margin-top:24px;display:none;">
         <hr style="margin:12px 0;border:none;border-top:2px dashed var(--primary);">
         <h3 style="margin-bottom:8px;">跨次前十名分析</h3>
         <div id="crossExamBatchPicker" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px;padding:8px 12px;background:#f0f7ff;border-radius:8px;border:1px solid #b8d4fe;">
@@ -1150,6 +1235,8 @@
             </div>
         </div>
         <div id="crossExamEmpty" style="display:none;color:#888;text-align:center;padding:20px;">请选择至少2个批次后点击生成分析</div>
+    </div>
+        </div>
     </div>
 </div>
 
@@ -2485,6 +2572,62 @@ function updateBatchInfoBars() {
     }
 }
 document.querySelectorAll('.tab-nav button').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
+
+function initAnalysisSectionNav() {
+    var navRoots = document.querySelectorAll('[data-analysis-nav]');
+    navRoots.forEach(function(root) {
+        var buttons = Array.prototype.slice.call(root.querySelectorAll('.analysis-nav-item'));
+        if (!buttons.length) return;
+
+        function setActive(targetId) {
+            buttons.forEach(function(btn) {
+                if (btn.hasAttribute('data-analysis-top')) return;
+                btn.classList.toggle('active', btn.getAttribute('data-analysis-target') === targetId);
+            });
+        }
+
+        buttons.forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                if (btn.hasAttribute('data-analysis-top')) {
+                    var contentEl = root.querySelector('.analysis-content');
+                    if (contentEl) { contentEl.scrollIntoView({ behavior: 'smooth', block: 'start' }); setActive(null); }
+                    return;
+                }
+                var targetId = btn.getAttribute('data-analysis-target');
+                var target = document.getElementById(targetId);
+                if (!target || target.offsetParent === null) return;
+                setActive(targetId);
+                target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                target.classList.add('analysis-section-pulse');
+                window.setTimeout(function() { target.classList.remove('analysis-section-pulse'); }, 700);
+            });
+        });
+
+        var targets = buttons.map(function(btn) {
+            return document.getElementById(btn.getAttribute('data-analysis-target'));
+        }).filter(Boolean);
+
+        function updateActiveFromScroll() {
+            var visible = targets.filter(function(target) { return target.offsetParent !== null; });
+            if (!visible.length) return;
+            var current = visible[0];
+            visible.forEach(function(target) {
+                if (target.getBoundingClientRect().top <= 140) current = target;
+            });
+            setActive(current.id);
+        }
+
+        if ('IntersectionObserver' in window) {
+            var observer = new IntersectionObserver(function(entries) {
+                if (entries.some(function(entry) { return entry.isIntersecting; })) updateActiveFromScroll();
+            }, { root: null, rootMargin: '-20% 0px -65% 0px', threshold: 0.01 });
+            targets.forEach(function(target) { observer.observe(target); });
+        } else {
+            window.addEventListener('scroll', updateActiveFromScroll, { passive: true });
+        }
+    });
+}
+initAnalysisSectionNav();
 
 // ============================================================
 //  BATCH MANAGEMENT
