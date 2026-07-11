@@ -126,7 +126,11 @@
         .filter-bar-select, .filter-bar-input { padding: 6px 10px; font-size: 13px; border-radius: var(--radius-xs); border: 1px solid var(--border); background: var(--surface); transition: var(--transition); }
         .filter-bar-select:focus, .filter-bar-input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(30,58,95,.1); }
         .student-ans-wrong { background: #fef2f2; color: var(--danger); border-radius: 4px; padding: 2px 7px; font-weight: 700; }
+        .collective-correct-option { background: #dcfce7; color: #15803d; border-radius: 4px; padding: 2px 5px; font-weight: 700; }
         .student-search-group { position: relative; display: inline-block; }
+        .student-search-group input[data-student-search-bound] { padding-right:24px; }
+        .student-search-toggle { position:absolute; right:2px; top:50%; transform:translateY(-50%); width:20px; height:24px; border:0; background:transparent; color:var(--text-secondary); cursor:pointer; padding:0; font-size:11px; line-height:24px; z-index:2; }
+        .student-search-toggle:hover { color:var(--primary); }
         .student-suggest { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); max-height: 210px; overflow-y: auto; position: absolute; z-index: 1000; min-width: 180px; width: 100%; box-shadow: var(--shadow-lg); }
         .student-suggest-item { padding: 7px 12px; cursor: pointer; font-size: 13px; transition: background .15s; line-height: 1.35; }
         .student-suggest-item:hover, .student-suggest-item.active { background: var(--primary); color: #fff; }
@@ -282,10 +286,12 @@
         .sr-table th, .sr-table td { border:1px solid #e5e7eb; padding:7px 6px; font-size:12px; text-align:center; }
         .sr-table th { background:#1e3a5f; color:#fff; position:static; }
         .sr-table tr:nth-child(even) { background:#f8fafc; }
-        .sr-pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:700; }
-        .sr-good { background:#dcfce7; color:#166534; }
-        .sr-warn { background:#fef3c7; color:#92400e; }
-        .sr-danger { background:#fee2e2; color:#991b1b; }
+        .sr-pill { display:inline-block; padding:2px 9px; border-radius:999px; font-size:11px; font-weight:800; border:1px solid transparent; white-space:nowrap; }
+        .sr-good { background:#dcfce7; color:#166534; border-color:#86efac; }
+        .sr-warn { background:#fff7ed; color:#9a3412; border-color:#fdba74; }
+        .sr-danger { background:#ffe4e6; color:#be123c; border-color:#fda4af; }
+        .sr-focus { background:#dc2626; color:#fff; border-color:#991b1b; box-shadow:inset 0 0 0 1px rgba(255,255,255,.22); }
+        .sr-assist { background:#dbeafe; color:#1d4ed8; border-color:#93c5fd; }
         .sr-plan { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
         .sr-plan-card { border:1px solid #e5e7eb; border-radius:12px; padding:12px; background:#fff; }
         .sr-plan-card h4 { margin:0 0 8px; color:#1e3a5f; }
@@ -1082,13 +1088,13 @@
         <div style="font-size:15px;font-weight:bold;color:#2980b9;margin-bottom:4px;" id="allStatsTitle"></div>
         <div class="scroll-container" style="max-height:320px;">
             <table id="questionStatsTable"><thead><tr>
-                <th>题目</th><th>分值表头</th><th>得分均值</th><th>最高分</th><th>最低分</th><th>标准答案</th><th>错选分布</th><th>得分率(%)</th>
+                <th>题目</th><th>分值表头</th><th>得分均值</th><th>最高分</th><th>最低分</th><th>标准答案</th><th>选项分布</th><th>得分率(%)</th>
             </tr></thead><tbody></tbody></table>
         </div>
         <div style="font-size:15px;font-weight:bold;color:#e74c3c;margin-top:16px;margin-bottom:4px;" id="lowStatsTitle"></div>
         <div class="scroll-container" style="max-height:160px;">
             <table id="lowStatsTable"><thead><tr>
-                <th>题目</th><th>分值表头</th><th>得分均值</th><th>最高分</th><th>最低分</th><th>标准答案</th><th>错选分布</th><th>得分率(%)</th>
+                <th>题目</th><th>分值表头</th><th>得分均值</th><th>最高分</th><th>最低分</th><th>标准答案</th><th>选项分布</th><th>得分率(%)</th>
             </tr></thead><tbody></tbody></table>
         </div>
     </div>
@@ -1137,8 +1143,8 @@
             <label>分数区间：</label>
             <select id="intervalSelect" style="padding:4px 8px;">
                 <option value="10">每10分一段</option>
-                <option value="5">每5分一段</option>
-                <option value="2" selected>每2分一段</option>
+                <option value="5" selected>每5分一段</option>
+                <option value="2">每2分一段</option>
                 <option value="1">每1分一段</option>
             </select>
         </div>
@@ -1167,7 +1173,7 @@
     <div class="controls">
         <div class="control-group"><label>学生姓名：</label>
             <div class="student-search-group" style="width:160px;">
-                <input type="text" id="nameSearch" placeholder="输入或选择姓名" list="studentNameList" style="width:160px;">
+                <input type="text" id="nameSearch" placeholder="输入或选择姓名" style="width:160px;">
                 <div class="student-suggest" id="nameSearchSuggest" style="display:none;"></div>
             </div>
             <datalist id="studentNameList"></datalist>
@@ -1269,6 +1275,7 @@
             <div class="student-search-group">
                 <input type="text" id="trendStudentSearch" class="search-input" placeholder="输入姓名中的任意字符进行搜索..." style="padding:3px 8px;border:1px solid #ccc;border-radius:4px;width:220px;font-size:13px;">
                 <div class="student-suggest" id="trendStudentSuggest" style="display:none;"></div>
+                <datalist id="trendStudentNameList"></datalist>
             </div>
         </div>
 
@@ -1369,7 +1376,7 @@
                  <div class="comp-card-controls">
                     <div class="control-group"><label>姓名：</label>
                         <div class="student-search-group" style="width:100px;">
-                            <input type="text" id="comprehensiveNameSearch" placeholder="输入姓名" list="comprehensiveNameList" style="width:100px;">
+                            <input type="text" id="comprehensiveNameSearch" placeholder="输入姓名" style="width:100px;">
                             <div class="student-suggest" id="comprehensiveNameSuggest" style="display:none;"></div>
                         </div>
                         <datalist id="comprehensiveNameList"></datalist>
@@ -1574,7 +1581,7 @@
                  <div class="comp-card-controls">
                     <div class="control-group"><label>姓名：</label>
                         <div class="student-search-group" style="width:100px;">
-                            <input type="text" id="smartNameSearch" placeholder="输入姓名" list="smartNameList" style="width:100px;">
+                            <input type="text" id="smartNameSearch" placeholder="输入姓名" style="width:100px;">
                             <div class="student-suggest" id="smartNameSuggest" style="display:none;"></div>
                         </div>
                         <datalist id="smartNameList"></datalist>
@@ -2093,6 +2100,30 @@ function bindStudentSearchInput(config) {
     var suggest = document.getElementById(config.suggestId);
     if (!input || !suggest || input.dataset.studentSearchBound) return;
     input.dataset.studentSearchBound = '1';
+    if (config.datalistId) {
+        var group = input.closest('.student-search-group');
+        var toggle = group ? group.querySelector('.student-search-toggle') : null;
+        if (group && !toggle) {
+            toggle = document.createElement('button');
+            toggle.type = 'button';
+            toggle.className = 'student-search-toggle';
+            toggle.title = '选择学生';
+            toggle.setAttribute('aria-label', '选择学生');
+            toggle.textContent = '▼';
+            group.appendChild(toggle);
+        }
+        if (toggle) {
+            toggle.addEventListener('mousedown', function(e) { e.preventDefault(); });
+            toggle.addEventListener('click', function() {
+                var datalist = document.getElementById(config.datalistId);
+                var matches = datalist ? Array.from(datalist.options).map(function(option) {
+                    return { displayName: option.value, rawName: option.value, className: '', fullPinyin: '', initials: '' };
+                }).filter(function(entry) { return entry.displayName; }) : [];
+                renderStudentSuggestList(suggest, matches);
+                input.focus();
+            });
+        }
+    }
     input.addEventListener('input', function() {
         if (typeof config.onInput === 'function') config.onInput(this.value);
         var classFilter = typeof config.getClassFilter === 'function' ? config.getClassFilter() : null;
@@ -2129,6 +2160,7 @@ function initStudentSearchBindings() {
     bindStudentSearchInput({
         inputId: 'nameSearch',
         suggestId: 'nameSearchSuggest',
+        datalistId: 'studentNameList',
         onInput: function(value) {
             var hv = String(value || '').trim().length > 0;
             document.getElementById('rankStart').disabled = hv;
@@ -2146,6 +2178,7 @@ function initStudentSearchBindings() {
     bindStudentSearchInput({
         inputId: 'trendStudentSearch',
         suggestId: 'trendStudentSuggest',
+        datalistId: 'trendStudentNameList',
         getClassFilter: function() {
             var cls = document.getElementById('trendClassFilter');
             return cls ? cls.value : '__all__';
@@ -2153,8 +2186,8 @@ function initStudentSearchBindings() {
         onEnter: function(value) { selectTrendStudentByName(value); },
         onSelect: function(value) { selectTrendStudentByName(value); }
     });
-    bindStudentSearchInput({ inputId: 'comprehensiveNameSearch', suggestId: 'comprehensiveNameSuggest' });
-    bindStudentSearchInput({ inputId: 'smartNameSearch', suggestId: 'smartNameSuggest' });
+    bindStudentSearchInput({ inputId: 'comprehensiveNameSearch', suggestId: 'comprehensiveNameSuggest', datalistId: 'comprehensiveNameList' });
+    bindStudentSearchInput({ inputId: 'smartNameSearch', suggestId: 'smartNameSuggest', datalistId: 'smartNameList' });
 }
 function normalizeStudentSearchInputValue(inputId, options) {
     var input = document.getElementById(inputId);
@@ -2234,6 +2267,13 @@ function utilBuildQuestionDict(scoreCols, ansCols, fd, ss) {
         qd[t].ansIdx = c.idx; qd[t].ansHeader = c.header;
     });
     return qd;
+}
+function formatCollectiveOptionDistribution(counts, correctAnswer) {
+    var correct = String(correctAnswer || '').toUpperCase().trim();
+    return Object.keys(counts).sort().map(function(option) {
+        var label = escapeHtml(option) + '(' + counts[option] + ')';
+        return option === correct ? '<span class="collective-correct-option">' + label + '</span>' : label;
+    }).join(' ');
 }
 
 const AI_PROMPT_PREFIX = ['# 角色与任务','你是一位拥有 10 年一线教学数据分析经验的资深教育数据分析师，擅长从大规模考试数据中精准定位学生的知识薄弱点、能力短板，并提供分层级、可落地的提分方案。','','请严格依据下方提供的 JSON 成绩数据，为指定学生生成一份**个性化、诊断性、可执行**的学情分析报告。','','','---','','# 关于输出格式的重要说明','你只能输出纯文本。请将分析结果以 **完整的 Markdown 格式文本** 输出在聊天框中。','用户收到后将手动全选、复制、粘贴到本地文本编辑器（如记事本），保存为 `.md` 文件后可在 Typora/Obsidian/VSCode 等工具中打开查看，或在 Word/WPS 中导入。','请勿尝试创建任何文件、调用任何下载功能——这不在你的能力范围内，强行尝试会产生无法处理的结果。','','','---','','# 输入数据说明','- JSON 中包含学生姓名、班级、各科得分、等级、排名，以及 `weakScoreRateThreshold`。','- `subjectFullMarks`：用户配置的各科满分参考，已自动并入常见异名。','- **重要**：禁止推算「全科统一口径下的总得分率」或强行合成总百分制得分率。','- 重点关注：`subjects` 下各科的 `score`、`grade`、`schoolRank`/`classRank`/`gradeRank`，以及 `weakSubScores`。','- 若存在 `paperMarkdown`/`paperMarkdowns`：可结合题干摘录辅助定位知识点；无摘录时不得臆测。','**知识点推断（硬约束）**：仅在以下条件满足时才允许写具体；否则必须写：无法从现有数据精确定位（需题干/考点标签）。','- ⚡ 重要：「小题/题型薄弱环节」表格中若"对应知识点"列显示"见1.4节"，务必先读完 1.4 节再回头为本题标注知识点。禁止在未读原文的情况下输出"无法定位"。','','','---','','# 分析要求','1. **总分定位与趋势**：用排名位次描述竞争位置；逐科分析 Section 2 中该生的排名路径变化（判断持续进步/退步/波动），结合 Section 3 交叉洞察给出结构性判断；不推算总得分率。','2. **单科表现**：对比各科等级与排名，明确优势学科与短板学科。','3. **小题归因**：逐科遍历 `weakSubScores.items`；完成表格；不得臆测。','4. **分层建议**：短期（1周）、中期（2周）；点名知识点。','5. **计划清单**：用 `[ ]` 复选框。','','','---','','# 输出规范','- 仅输出Markdown；章节标题必须与 `outputSpec.requiredSections` 逐字一致（## 二级标题）。','- 关键结论加粗；优先用表格；末尾附鼓励性结语。','- 版式：章节标题四号黑体加粗；正文宋体小四；数字/英文 Times New Roman。','- 「小题/题型薄弱环节」表格必须含列：题号/模块 | 对应知识点 | 得分/满分 | 得分率 | 学生答案→正确答案 | 失分诊断。','','','---','','# 语言风格','专业、客观、富有建设性；少套话，多可执行动作。','','','---','','# 输入（JSON）','以下为你的输入数据（请只依据该 JSON 生成报告）：',''].join('\n');
@@ -4205,12 +4245,28 @@ function getSubjectFullMarksFromInputs() {
     prs.forEach(([lb,id]) => { const el = document.getElementById(id); if (!el) return; const v = parseInt(String(el.value).trim(),10); if (!isNaN(v)&&v>0) o[lb]=v; });
     return o;
 }
-function expandSubjectFullMarks(base) {
+function resolveAmbiguousEnglishFullMark(studentData) {
+    var hasScoreAbove75 = false;
+    (studentData || []).forEach(function(stu) {
+        var sd = stu && stu.subjects ? stu.subjects['英语'] : null;
+        var score = sd ? parseFloat(sd.score) : NaN;
+        if (!isNaN(score) && score > 75) hasScoreAbove75 = true;
+    });
+    return hasScoreAbove75 ? 100 : 75;
+}
+function expandSubjectFullMarks(base, studentData) {
     const b = base && typeof base === 'object' ? { ...base } : {}, out = { ...b };
     const from = (a,c) => { if (out[a]==null && b[c]!=null) out[a]=b[c]; };
     from('道德与法治','道法'); from('思想政治','道法'); from('政治','道法'); from('思想品德','道法'); from('法治与社会','道法');
     from('英语听说','听说'); from('英语听力','听说'); from('听力','听说');
-    if (out['英语']==null && b['英语笔试']!=null && b['听说']!=null) out['英语']=b['英语笔试']+b['听说'];
+    if (b['英语笔试']!=null && b['听说']!=null) {
+        var englishTotal = b['英语笔试'] + b['听说'];
+        var ambiguousEnglishFullMark = resolveAmbiguousEnglishFullMark(studentData || combinedStudentData);
+        if (out['英语']==null) out['英语'] = ambiguousEnglishFullMark;
+        if (out['英语合并']==null) out['英语合并'] = englishTotal;
+        if (out['英语总分']==null) out['英语总分'] = englishTotal;
+        if (out['英语合']==null) out['英语合'] = englishTotal;
+    }
     return out;
 }
 
@@ -4590,7 +4646,7 @@ function renderCrossExamCountTable(batchTop10s) {
 //  COLLECTIVE ANALYSIS TAB (adapted from 单科分析V3)
 // ============================================================
 function buildCollectiveDataFromCombined() {
-    if (!combinedStudentData.length) return { headers: [], data: [], classField: '', nameField: '', fullScoreField: '', classList: [], subjectList: [], subjQMap: {}, fullScoreMap: {} };
+    if (!combinedStudentData.length) return { headers: [], data: [], classField: '', nameField: '', fullScoreField: '', classList: [], subjectList: [], subjQMap: {}, fullScoreMap: {}, correctAnswerMap: {} };
     const KNOWN_SUBJECTS = new Set(['语文','数学','英语','英语笔试','英语听力','物理','化学','生物','历史','地理','政治','道法','总分','理综','文综','道德与法治','思想政治']);
     const META_NAMES = new Set(['学校','考号','学号','序号','准考证','编号','姓名','名字','班级','行政班','班名','行政班级','考生类型','考生类别','科类','文理','选科','类型','校名']);
     const tn = getTotalSubjectName(allSubjectHeaders) || (allSubjectHeaders.length ? allSubjectHeaders[0].name : '');
@@ -4598,6 +4654,7 @@ function buildCollectiveDataFromCombined() {
     const subjQMap = {};
     const subjectSet = new Set();
     const fullScoreMap = {}; // headerKey → fullScore number
+    const correctAnswerMap = {}; // headerKey → correct answer
     allSubjectHeaders.forEach(sh => {
         const sn = sh.name;
         if (META_NAMES.has(sn)) return;
@@ -4614,6 +4671,7 @@ function buildCollectiveDataFromCombined() {
                 var hkey = sn + '_' + mapKey + maxS;
                 if (!headers.includes(hkey)) headers.push(hkey);
                 fullScoreMap[hkey] = q.maxScore != null && q.maxScore > 0 ? q.maxScore : null;
+                if (q.correctAnswer) correctAnswerMap[hkey] = String(q.correctAnswer).trim();
                 var akey = hkey + '_答案';
                 if (q.answerIndex !== -1 && !headers.includes(akey)) headers.push(akey);
             });
@@ -4654,7 +4712,7 @@ function buildCollectiveDataFromCombined() {
     const classList = [...new Set(data.map(r => r['班级']).filter(Boolean))].sort((a,b) => (a+'').localeCompare(b+'','zh'));
     const subjectList = Array.from(subjectSet).sort((a,b) => (a+'').localeCompare(b+'','zh'));
     const fn = tn + '_分数';
-    return { headers, data, classField: '班级', nameField: '姓名', fullScoreField: fn, classList, subjectList, subjQMap, fullScoreMap };
+    return { headers, data, classField: '班级', nameField: '姓名', fullScoreField: fn, classList, subjectList, subjQMap, fullScoreMap, correctAnswerMap };
 }
 
 function renderCollectiveAll() {
@@ -4775,12 +4833,13 @@ function renderCollectiveTables() {
         if (item.ansIdx != null) {
             const counts = {};
             fd.data.forEach(r => { const v = String(r[fd.headers[item.ansIdx]] || '').toUpperCase().trim(); if (v) counts[v] = (counts[v]||0)+1; });
-            wrongDist = Object.keys(counts).sort().map(k => `${k}(${counts[k]})`).join(' ');
+            wrongDist = formatCollectiveOptionDistribution(counts, fd.correctAnswerMap[item.scoreHeader]);
         }
         const isLow = item.fullScore && scores.length && rate !== '-' && Number(rate) < collectiveThreshold;
         var escapedT = escapeHtml(t);
         var attrSafeT = t.replace(/'/g,"\\'");
-        const tr = `<tr${isLow?' class="highlight"':''}><td><a href="#" onclick="showQuestionLowStudents('${attrSafeT}');return false;" style="color:inherit;text-decoration:none;display:block;" title="点击查看低分学生">${escapedT}</a></td><td>${escapeHtml(item.scoreHeader||'')}</td><td>${avgStr}</td><td>${max}</td><td>${min}</td><td>-</td><td>${wrongDist}</td><td>${rate==='-'?'-':rate+'%'}</td></tr>`;
+        const correctAnswer = fd.correctAnswerMap[item.scoreHeader] || '-';
+        const tr = `<tr${isLow?' class="highlight"':''}><td><a href="#" onclick="showQuestionLowStudents('${attrSafeT}');return false;" style="color:inherit;text-decoration:none;display:block;" title="点击查看低分学生">${escapedT}</a></td><td>${escapeHtml(item.scoreHeader||'')}</td><td>${avgStr}</td><td>${max}</td><td>${min}</td><td>${escapeHtml(correctAnswer)}</td><td>${wrongDist}</td><td>${rate==='-'?'-':rate+'%'}</td></tr>`;
         allRows.push(tr); if (isLow) lowRows.push(tr);
     });
     document.querySelector('#questionStatsTable tbody').innerHTML = allRows.join('') || '<tr><td colspan="8">无数据</td></tr>';
@@ -4825,13 +4884,13 @@ function renderRankedAnalysis() {
     var qd = utilBuildQuestionDict(scoreCols, ansCols, fd, ss);
     const qo = Object.keys(qd);
     let html = `<div style="font-weight:bold;color:#2980b9;">分析对象：${selected.map(s=>escapeHtml(s[fd.nameField])).join('、')}</div>`;
-    html += '<div class="scroll-container" style="max-height:300px;"><table><thead><tr><th>题目</th><th>分值表头</th><th>得分均值</th><th>最高分</th><th>最低分</th><th>错选分布</th><th>得分率(%)</th></tr></thead><tbody>';
+    html += '<div class="scroll-container" style="max-height:300px;"><table><thead><tr><th>题目</th><th>分值表头</th><th>得分均值</th><th>最高分</th><th>最低分</th><th>选项分布</th><th>得分率(%)</th></tr></thead><tbody>';
     qo.forEach(t => {
         const item = qd[t]; if (!item || item.scoreIdx == null) return;
         const scores = selected.map(r => { const v = r[fd.headers[item.scoreIdx]]; return typeof v === 'string' ? parseFloat(v)||0 : (v||0); }).filter(s => !isNaN(s));
         const avg = scores.length ? scores.reduce((a,b)=>a+b,0)/scores.length : 0;
         let rate = '-'; if (item.fullScore && scores.length) rate = ((avg/item.fullScore)*100).toFixed(1);
-        let wd = ''; if (item.ansIdx != null) { const cnts = {}; selected.forEach(r => { const v = String(r[fd.headers[item.ansIdx]]||'').toUpperCase().trim(); if (v) cnts[v] = (cnts[v]||0)+1; }); wd = Object.keys(cnts).sort().map(k=>`${k}(${cnts[k]})`).join(' '); }
+        let wd = ''; if (item.ansIdx != null) { const cnts = {}; selected.forEach(r => { const v = String(r[fd.headers[item.ansIdx]]||'').toUpperCase().trim(); if (v) cnts[v] = (cnts[v]||0)+1; }); wd = formatCollectiveOptionDistribution(cnts, fd.correctAnswerMap[item.scoreHeader]); }
         html += `<tr><td>${t}</td><td>${item.scoreHeader||''}</td><td>${scores.length?avg.toFixed(2):'-'}</td><td>${scores.length?Math.max(...scores):'-'}</td><td>${scores.length?Math.min(...scores):'-'}</td><td>${wd}</td><td>${rate==='-'?'-':rate+'%'}</td></tr>`;
     });
     html += '</tbody></table></div>';
@@ -4864,13 +4923,13 @@ function renderLevelAnalysis() {
         html += '<div style="font-weight:bold;color:#2980b9;margin:8px 0 4px;">' + escapeHtml(lv) + ' 等级：' + students.length + '人（<b>' + escapeHtml(ct) + '</b>）</div>';
         if (!students.length) { html += '<div style="color:#aaa;">该等级下无学生</div>'; return; }
         html += '<div style="margin:2px 0 6px;font-size:12px;color:#555;">学生名单：' + students.map(function(s) { return escapeHtml(s[fd.nameField]); }).join('、') + '</div>';
-        html += '<div class="scroll-container" style="max-height:200px;"><table><thead><tr><th>题目</th><th>分值表头</th><th>得分均值</th><th>最高分</th><th>最低分</th><th>错选分布</th><th>得分率(%)</th></tr></thead><tbody>';
+        html += '<div class="scroll-container" style="max-height:200px;"><table><thead><tr><th>题目</th><th>分值表头</th><th>得分均值</th><th>最高分</th><th>最低分</th><th>选项分布</th><th>得分率(%)</th></tr></thead><tbody>';
         qo.forEach(function(t) {
             const item = qd[t]; if (!item || item.scoreIdx == null) return;
             const scores = students.map(function(r) { const v = r[fd.headers[item.scoreIdx]]; return typeof v==='string'?parseFloat(v)||0:(v||0); }).filter(function(s) { return !isNaN(s); });
             const avg = scores.length ? scores.reduce(function(a,b){return a+b;},0)/scores.length : 0;
             var rate = '-'; if (item.fullScore && scores.length) rate = ((avg/item.fullScore)*100).toFixed(1);
-            var wd = ''; if (item.ansIdx != null) { const cnts = {}; students.forEach(function(r) { const v = String(r[fd.headers[item.ansIdx]]||'').toUpperCase().trim(); if (v) cnts[v] = (cnts[v]||0)+1; }); wd = Object.keys(cnts).sort().map(function(k){return k+'('+cnts[k]+')';}).join(' '); }
+            var wd = ''; if (item.ansIdx != null) { const cnts = {}; students.forEach(function(r) { const v = String(r[fd.headers[item.ansIdx]]||'').toUpperCase().trim(); if (v) cnts[v] = (cnts[v]||0)+1; }); wd = formatCollectiveOptionDistribution(cnts, fd.correctAnswerMap[item.scoreHeader]); }
             html += '<tr><td>' + t + '</td><td>' + (item.scoreHeader||'') + '</td><td>' + (scores.length?avg.toFixed(2):'-') + '</td><td>' + (scores.length?Math.max.apply(null,scores):'-') + '</td><td>' + (scores.length?Math.min.apply(null,scores):'-') + '</td><td>' + wd + '</td><td>' + (rate==='-'?'-':rate+'%') + '</td></tr>';
         });
         html += '</tbody></table></div>';
@@ -4932,13 +4991,13 @@ function showCollectiveStudentDetail(name) {
         allStats[t] = { avg, wrongDist: wd };
     });
     let html = `<h3>姓名查询：${name}${fd.classField&&stu[fd.classField]?`（${stu[fd.classField]}班）`:''}</h3>`;
-    html += '<div class="scroll-container" style="max-height:300px;"><table><thead><tr><th>题目</th><th>分值表头</th><th>得分</th><th>学生答案</th><th>均分</th><th>错选分布</th></tr></thead><tbody>';
+    html += '<div class="scroll-container" style="max-height:300px;"><table><thead><tr><th>题目</th><th>分值表头</th><th>得分</th><th>学生答案</th><th>均分</th><th>选项分布</th></tr></thead><tbody>';
     qo.forEach(t => {
         const item = qd[t]; if (!item || item.scoreIdx == null) return;
         const score = stu[fd.headers[item.scoreIdx]];
         let stuAns = item.ansIdx != null ? stu[fd.headers[item.ansIdx]] : ''; if (stuAns == null) stuAns = '';
         const avg = allStats[t] ? allStats[t].avg : '-';
-        let wd = ''; if (allStats[t] && allStats[t].wrongDist) wd = Object.keys(allStats[t].wrongDist).sort().map(k=>`${k}(${allStats[t].wrongDist[k]})`).join(' ');
+        let wd = ''; if (allStats[t] && allStats[t].wrongDist) wd = formatCollectiveOptionDistribution(allStats[t].wrongDist, fd.correctAnswerMap[item.scoreHeader]);
         let saCell = '-'; if (stuAns) saCell = `<span class="student-ans-wrong">${stuAns}</span>`;
         html += `<tr><td>${t}</td><td>${item.scoreHeader||''}</td><td>${score!==undefined&&score!==null&&score!==''?score:'-'}</td><td>${saCell}</td><td>${typeof avg==='number'?avg.toFixed(2):avg}</td><td>${wd}</td></tr>`;
     });
@@ -5882,6 +5941,16 @@ function refreshTrendTab() {
     renderTrendClassFilter();
     var classFilter = document.getElementById('trendClassFilter')?.value || '__all__';
     DataPool.trendParsedSheets = buildParsedSheetsFromAllBatches(classFilter);
+    var trendNameList = document.getElementById('trendStudentNameList');
+    if (trendNameList) {
+        trendNameList.innerHTML = '';
+        var trendRows = DataPool.trendParsedSheets && DataPool.trendParsedSheets.total ? DataPool.trendParsedSheets.total.rows : [];
+        Array.from(new Set(trendRows.map(function(row) { return row && row[0] ? String(row[0]) : ''; }).filter(Boolean))).sort().forEach(function(name) {
+            var option = document.createElement('option');
+            option.value = name;
+            trendNameList.appendChild(option);
+        });
+    }
     var currentSearch = document.getElementById('trendStudentSearch');
     if (currentSearch && currentSearch.value.trim()) {
         normalizeStudentSearchInputValue('trendStudentSearch', { classFilter: classFilter });
@@ -7217,7 +7286,145 @@ function getStudentReadableReportData(studentName, thresholdVal) {
     try { return JSON.parse(raw); } catch(e) { return null; }
 }
 
-function getReadableSubjectStatus(subjectInfo) {
+function computeSubjectStructuralPriorities(targetStudent, allStudents, reportSubjects, totalName) {
+    var result = {};
+    if (!targetStudent || !allStudents || !allStudents.length || !reportSubjects || !reportSubjects.length || !totalName) return result;
+    function toNumber(v) {
+        var n = parseFloat(v);
+        return isNaN(n) ? null : n;
+    }
+    function getScore(stu, subjectName) {
+        var sd = stu && stu.subjects ? stu.subjects[subjectName] : null;
+        return sd ? toNumber(sd.score) : null;
+    }
+    var targetTotal = getScore(targetStudent, totalName);
+    if (targetTotal == null) return result;
+    reportSubjects.forEach(function(subjectInfo) {
+        var subjectName = subjectInfo.name;
+        var targetScore = toNumber(subjectInfo.score);
+        if (targetScore == null) return;
+        var targetAnchor = targetTotal - targetScore;
+        var peers = [];
+        allStudents.forEach(function(stu) {
+            if (!stu || stu === targetStudent) return;
+            var totalScore = getScore(stu, totalName);
+            var peerScore = getScore(stu, subjectName);
+            if (totalScore == null || peerScore == null) return;
+            var peerAnchor = totalScore - peerScore;
+            peers.push({ score: peerScore, distance: Math.abs(peerAnchor - targetAnchor) });
+        });
+        peers.sort(function(a, b) { return a.distance - b.distance; });
+        var usablePeers = peers.slice(0, 30).filter(function(p) { return p.distance <= 20; });
+        if (usablePeers.length < 3) usablePeers = peers.slice(0, Math.min(10, peers.length));
+        if (usablePeers.length < 3) return;
+        var avg = usablePeers.reduce(function(sum, p) { return sum + p.score; }, 0) / usablePeers.length;
+        var gap = avg - targetScore;
+        var fullMark = toNumber(subjectInfo.fullMark);
+        var focusThreshold = fullMark && fullMark > 0 ? Math.max(5, fullMark * 0.10) : 8;
+        var assistThreshold = fullMark && fullMark > 0 ? Math.max(3, fullMark * 0.06) : 5;
+        var level = 'normal';
+        if (gap >= focusThreshold) level = 'focus';
+        else if (gap >= assistThreshold) level = 'assist';
+        result[subjectName] = { level: level, gap: gap, peerAverage: avg, peerCount: usablePeers.length };
+    });
+    return result;
+}
+
+function computeSubjectLiftScenarios(targetStudent, allStudents, reportSubjects, totalName, structuralPriorities, liftRatioOpt) {
+    var rows = [];
+    if (!targetStudent || !allStudents || !allStudents.length || !reportSubjects || !reportSubjects.length || !totalName || !structuralPriorities) return rows;
+    function toNumber(v) {
+        var n = parseFloat(v);
+        return isNaN(n) ? null : n;
+    }
+    function getScore(stu, subjectName) {
+        var sd = stu && stu.subjects ? stu.subjects[subjectName] : null;
+        return sd ? toNumber(sd.score) : null;
+    }
+    var targetTotal = getScore(targetStudent, totalName);
+    if (targetTotal == null) return rows;
+    var liftRatio = parseFloat(liftRatioOpt);
+    if (isNaN(liftRatio)) liftRatio = 0.6;
+    liftRatio = Math.max(0.4, Math.min(0.8, liftRatio));
+    var totalScores = allStudents.map(function(stu) { return getScore(stu, totalName); }).filter(function(v) { return v != null; });
+    if (totalScores.length < 30) return rows;
+    var currentRank = totalScores.filter(function(v) { return v > targetTotal; }).length + 1;
+    var primaryRows = [];
+    var alternativeRows = [];
+    function isExcludedSubject(subjectName) {
+        var name = String(subjectName || '').replace(/\s/g, '');
+        return name.indexOf('\u542c\u8bf4') !== -1 || name.indexOf('\u542c\u529b') !== -1 || name === '\u82f1\u8bed\u5408\u5e76' || name === '\u82f1\u8bed\u603b\u5206' || name === '\u82f1\u8bed\u5408' || name === '\u82f1\u8bed/\u542c\u8bf4';
+    }
+    function pushScenario(subjectInfo, structural, scenarioType, estimatedLift, remainingSpace) {
+        if (estimatedLift < 1) return;
+        var simulatedTotal = targetTotal + estimatedLift;
+        var simulatedRank = totalScores.filter(function(v) { return v > simulatedTotal; }).length + 1;
+        var rankGain = Math.max(0, currentRank - simulatedRank);
+        var row = {
+            name: subjectInfo.name,
+            structuralGap: structural ? structural.gap : null,
+            estimatedLift: estimatedLift,
+            simulatedTotal: simulatedTotal,
+            rankGain: rankGain,
+            peerCount: structural && structural.peerCount ? structural.peerCount : 0,
+            confidence: structural && structural.peerCount >= 15 ? 'medium' : 'low',
+            scenarioType: scenarioType,
+            remainingSpace: remainingSpace
+        };
+        if (scenarioType === 'alternative') alternativeRows.push(row);
+        else primaryRows.push(row);
+    }
+    reportSubjects.forEach(function(subjectInfo) {
+        var structural = structuralPriorities[subjectInfo.name];
+        var score = toNumber(subjectInfo.score);
+        var fullMark = toNumber(subjectInfo.fullMark);
+        if (score == null || fullMark == null || fullMark <= score || isExcludedSubject(subjectInfo.name)) return;
+        var remainingSpace = fullMark - score;
+        if (structural && structural.gap > 0 && structural.level !== 'normal') {
+            pushScenario(subjectInfo, structural, 'primary', Math.min(structural.gap * liftRatio, remainingSpace), remainingSpace);
+        } else {
+            pushScenario(subjectInfo, structural, 'alternative', remainingSpace * liftRatio, remainingSpace);
+        }
+    });
+    primaryRows.sort(function(a, b) { return b.structuralGap - a.structuralGap || b.estimatedLift - a.estimatedLift; });
+    alternativeRows.sort(function(a, b) { return b.remainingSpace - a.remainingSpace || b.estimatedLift - a.estimatedLift; });
+    return primaryRows.slice(0, 2).concat(alternativeRows.slice(0, 2));
+}
+
+function canShowRankPrediction(batchCount, sampleSize) {
+    return batchCount >= 2 && sampleSize >= 30;
+}
+
+function getActionPrioritySubjects(subjects, structuralPriorities, liftScenarios, fallbackWeakest) {
+    var byName = {};
+    (subjects || []).forEach(function(s) { byName[s.name] = s; });
+    var picked = {};
+    var result = [];
+    function addByName(name) {
+        if (!name || picked[name] || !byName[name]) return;
+        picked[name] = true;
+        result.push(byName[name]);
+    }
+    (liftScenarios || []).forEach(function(row) { addByName(row.name); });
+    Object.keys(structuralPriorities || {}).filter(function(name) {
+        var info = structuralPriorities[name];
+        return info && info.level === 'focus';
+    }).sort(function(a, b) { return structuralPriorities[b].gap - structuralPriorities[a].gap; }).forEach(addByName);
+    Object.keys(structuralPriorities || {}).filter(function(name) {
+        var info = structuralPriorities[name];
+        return info && info.level === 'assist';
+    }).sort(function(a, b) { return structuralPriorities[b].gap - structuralPriorities[a].gap; }).forEach(addByName);
+    (fallbackWeakest || []).forEach(function(s) { addByName(s.name); });
+    return result;
+}
+
+function getReadableSubjectStatus(subjectInfo, structuralInfo) {
+    if (structuralInfo && structuralInfo.level === 'focus') {
+        return { text: '精准发力（同水平低约' + Math.round(structuralInfo.gap) + '分）', cls: 'sr-focus' };
+    }
+    if (structuralInfo && structuralInfo.level === 'assist') {
+        return { text: '可补短板（同水平低约' + Math.round(structuralInfo.gap) + '分）', cls: 'sr-assist' };
+    }
     var rate = subjectInfo.rate;
     var weakCount = subjectInfo.weakCount || 0;
     if (rate != null && rate >= 85 && weakCount > 0) return { text: '优势但有局部弱项', cls: 'sr-warn' };
@@ -7282,6 +7489,7 @@ function renderStudentReadableReport(studentName, thresholdVal) {
     var strongest = subjects.filter(function(s) { return s.rate != null; }).sort(function(a, b) { return b.rate - a.rate; }).slice(0, 3);
     var weakest = subjects.filter(function(s) { return s.rate != null; }).sort(function(a, b) { return a.rate - b.rate; }).slice(0, 3);
     var totalRank = total ? (total.gradeRank || total.schoolRank || total.classRank || '-') : '-';
+    var liftRatio = 0.6;
     var batch = DataPool.getCurrentBatch ? DataPool.getCurrentBatch() : null;
     var reportTitle = (data.displayName || data.name || studentName || '学生') + ' 学生个体图文报告';
     var html = [];
@@ -7295,52 +7503,85 @@ function renderStudentReadableReport(studentName, thresholdVal) {
     html.push('<div class="sr-kpi"><div class="sr-kpi-label">优势科目</div><div class="sr-kpi-value" style="font-size:16px;">' + escapeHtml(strongest.map(function(s){return s.name;}).join('、') || '-') + '</div></div>');
     html.push('</div>');
 
-    html.push('<div class="sr-section"><h3>一、整体判断</h3><div class="sr-note-box">');
+    html.push('<div class="sr-section"><h3>一、整体趋势</h3><div class="sr-note-box">');
     html.push('<b>优势科目：</b>' + escapeHtml(strongest.map(function(s){ return s.name + (s.rate != null ? '(' + s.rate + '%)' : ''); }).join('、') || '暂无可判定数据') + '<br>');
     html.push('<b>优先补强：</b>' + escapeHtml(weakest.map(function(s){ return s.name + (s.rate != null ? '(' + s.rate + '%)' : ''); }).join('、') || '暂无可判定数据') + '<br>');
     html.push('<b>主要风险：</b>' + (weakItems.length ? '存在 ' + weakItems.length + ' 个低于阈值的小题/模块，需优先处理最低得分率项目。' : '本次未发现低于阈值的小题/模块，建议保持节奏并复盘易错点。'));
-    html.push('</div></div>');
+    html.push('</div><div class="sr-grid"><div id="studentReportTrendChart" class="sr-chart sr-chart-large"></div><div id="studentReportRadarChart" class="sr-chart sr-chart-large"></div></div></div>');
 
-    html.push('<div class="sr-section"><h3>二、趋势与学科结构</h3><div class="sr-grid">');
-    html.push('<div id="studentReportTrendChart" class="sr-chart sr-chart-large"></div>');
-    html.push('<div id="studentReportRadarChart" class="sr-chart sr-chart-large"></div>');
+    html.push('<div class="sr-section"><h3>二、科目结构</h3><div class="sr-grid">');
     html.push('<div id="studentReportRankCompareChart" class="sr-chart sr-chart-wide"></div>');
-    html.push('<div id="studentReportWeakCompareChart" class="sr-chart sr-chart-wide"></div>');
-    html.push('</div></div>');
+    html.push('</div>');
 
-    html.push('<div class="sr-section"><h3>三、各科结构明细</h3>');
+    html.push('<h4 style="margin:12px 0 4px;color:#1e3a5f;">各科结构明细</h4>');
     html.push('<table class="sr-table"><thead><tr><th>科目</th><th>得分</th><th>满分参考</th><th>得分率</th><th>等级</th><th>年级/校排名</th><th>薄弱数</th><th>状态</th></tr></thead><tbody>');
+    var currentStudentEntry = findStudentByNameOrDisplay(combinedStudentData, studentName);
+    var structuralPriorities = computeSubjectStructuralPriorities(currentStudentEntry, combinedStudentData, subjects, totalName);
+    var savedBatchCount = DataPool && DataPool.batches ? DataPool.batches.length : 0;
+    var showRankPrediction = canShowRankPrediction(savedBatchCount, combinedStudentData.length);
+    var liftScenarios = showRankPrediction ? computeSubjectLiftScenarios(currentStudentEntry, combinedStudentData, subjects, totalName, structuralPriorities, liftRatio) : [];
+    var actionPrioritySubjects = getActionPrioritySubjects(subjects, structuralPriorities, liftScenarios, weakest);
     subjects.forEach(function(s) {
-        var statusInfo = getReadableSubjectStatus(s);
-        var status = '<span class="sr-pill ' + statusInfo.cls + '">' + statusInfo.text + '</span>';
+        var statusInfo = getReadableSubjectStatus(s, structuralPriorities[s.name]);
+        var status = '<span class="sr-pill ' + statusInfo.cls + '">' + escapeHtml(statusInfo.text) + '</span>';
         html.push('<tr><td>' + escapeHtml(s.name) + '</td><td>' + escapeHtml(s.score != null ? String(s.score) : '-') + '</td><td>' + escapeHtml(s.fullMark != null ? String(s.fullMark) : '-') + '</td><td>' + escapeHtml(s.rate != null ? s.rate + '%' : '-') + '</td><td>' + escapeHtml(s.grade || '-') + '</td><td>' + escapeHtml(s.rank != null ? String(s.rank) : '-') + '</td><td>' + s.weakCount + '</td><td>' + status + '</td></tr>');
     });
     html.push('</tbody></table></div>');
 
-    html.push('<div class="sr-section"><h3>四、薄弱小题清单</h3>');
+    html.push('<div class="sr-section"><h3>三、发力方向</h3>');
+    if (liftScenarios.length) {
+        html.push('<div class="sr-note-box">基于“同水平结构短板”做保守估计：预计可提升分按结构差距的' + Math.round(liftRatio * 100) + '%折算；名次收益使用当前批次总分分布模拟，作为发力方向参考。</div>');
+        html.push('<table class="sr-table"><thead><tr><th>优先科目</th><th>结构差距</th><th>预计可提升</th><th>模拟总分</th><th>约可前进</th><th>可信度</th></tr></thead><tbody>');
+        liftScenarios.slice(0, 5).forEach(function(row, idx) {
+            var isAlt = row.scenarioType === 'alternative';
+            var cls = isAlt ? 'sr-assist' : (idx === 0 ? 'sr-focus' : 'sr-warn');
+            var confidenceText = row.confidence === 'medium' ? '中' : '低';
+            var subjectLabel = row.name + (isAlt ? '（备选）' : '（主攻）');
+            var gapText = isAlt && (!row.structuralGap || row.structuralGap <= 0) ? '非短板' : Math.round(row.structuralGap) + '分';
+            html.push('<tr><td><span class="sr-pill ' + cls + '">' + escapeHtml(subjectLabel) + '</span></td><td>' + escapeHtml(gapText) + '</td><td>' + row.estimatedLift.toFixed(1) + '分</td><td>' + row.simulatedTotal.toFixed(1) + '</td><td>' + (row.rankGain > 0 ? row.rankGain + '名' : '当前分布不明显') + '</td><td>' + escapeHtml(confidenceText) + '</td></tr>');
+        });
+        html.push('</tbody></table>');
+    } else {
+        html.push('<div class="sr-note-box">当前未显示排名预测：需要至少2个批次且当前样本不少于30人。仍可参考“科目结构”中的精准发力提示安排训练。</div>');
+    }
+    html.push('</div>');
+
+    html.push('<div class="sr-section"><h3>四、具体薄弱题</h3>');
+    html.push('<div id="studentReportWeakCompareChart" class="sr-chart sr-chart-wide"></div>');
+    html.push('</div>');
+
+    html.push('<div class="sr-section"><h3>五、薄弱小题明细清单</h3>');
     if (weakItems.length) {
         html.push('<table class="sr-table"><thead><tr><th>科目</th><th>题号/模块</th><th>得分</th><th>个人得分率</th><th>全体该题得分率</th><th>与全体对比</th><th>学生答案</th><th>正确答案</th></tr></thead><tbody>');
-        weakItems.slice(0, 18).forEach(function(w) {
+        weakItems.slice(0, 36).forEach(function(w) {
             var pillClass = w.rate < 0.4 ? 'sr-danger' : 'sr-warn';
             var classRateText = w.classRate == null ? '-' : Math.round(w.classRate * 100) + '%';
             html.push('<tr><td>' + escapeHtml(w.subject) + '</td><td>' + escapeHtml(w.item) + '</td><td>' + escapeHtml(w.score + '/' + w.maxScore) + '</td><td><span class="sr-pill ' + pillClass + '">' + Math.round(w.rate * 100) + '%</span></td><td>' + escapeHtml(classRateText) + '</td><td>' + escapeHtml(getReadableItemComparison(w.rate, w.classRate)) + '</td><td>' + escapeHtml(w.studentAnswer || '无数据') + '</td><td>' + escapeHtml(w.correctAnswer || '无数据') + '</td></tr>');
         });
         html.push('</tbody></table>');
-        if (weakItems.length > 18) html.push('<div class="sr-note-box" style="margin-top:8px;">仅展示得分率最低的18项，其余弱项可在 AI 深度报告包中查看。</div>');
+        if (weakItems.length > 36) html.push('<div class="sr-note-box" style="margin-top:8px;">仅展示得分率最低的36项，其余弱项可在 AI 深度报告包中查看。</div>');
     } else {
         html.push('<div class="sr-note-box">暂无低于当前阈值的小题/模块。</div>');
     }
     html.push('</div>');
 
-    html.push('<div class="sr-section"><h3>五、两周行动建议</h3><div class="sr-plan">');
+    html.push('<div class="sr-section"><h3>六、行动建议</h3><div class="sr-plan">');
     html.push('<div class="sr-plan-card"><h4>第1周：止损补弱</h4><ul>');
-    weakest.slice(0, 2).forEach(function(s) { html.push('<li>' + escapeHtml(s.name) + '：每天完成1组对应薄弱题，错题需写明错误原因。</li>'); });
-    if (!weakest.length) html.push('<li>保持现有节奏，重点复盘本次考试错因。</li>');
-    html.push('<li>优先处理得分率最低的3个小题/模块。</li></ul></div>');
+    actionPrioritySubjects.slice(0, 2).forEach(function(s) {
+        var structural = structuralPriorities[s.name];
+        var reason = structural && structural.level !== 'normal' ? '同水平低约' + Math.round(structural.gap) + '分' : '当前得分率偏低';
+        html.push('<li>' + escapeHtml(s.name) + '：作为优先发力科目（' + escapeHtml(reason) + '），每天完成1组对应薄弱题，错题需写明错误原因。</li>');
+    });
+    if (!actionPrioritySubjects.length) html.push('<li>保持现有节奏，重点复盘本次考试错因。</li>');
+    var actionSubjectNames = actionPrioritySubjects.slice(0, 2).map(function(s) { return s.name; });
+    var priorityWeakItems = weakItems.filter(function(w) { return actionSubjectNames.indexOf(w.subject) >= 0; }).slice(0, 3);
+    html.push('<li>优先处理' + escapeHtml(priorityWeakItems.length ? priorityWeakItems.map(function(w){return w.subject + '-' + w.item;}).join('、') : '得分率最低的3个小题/模块') + '。</li></ul></div>');
     html.push('<div class="sr-plan-card"><h4>第2周：巩固提升</h4><ul>');
     html.push('<li>对第1周错题做同类变式训练，确保能独立讲清解题路径。</li>');
     html.push('<li>优势科目保持限时训练，避免因补弱挤占优势。</li>');
-    html.push('<li>下一次小测重点跟踪：' + escapeHtml(weakItems.slice(0, 3).map(function(w){return w.subject + '-' + w.item;}).join('、') || '各科稳定性') + '。</li>');
+    var followItems = priorityWeakItems.length ? priorityWeakItems : weakItems.slice(0, 3);
+    var followSubjects = actionPrioritySubjects.slice(0, 3).map(function(s) { return s.name; }).join('、');
+    html.push('<li>下一次小测重点跟踪：' + escapeHtml(followItems.map(function(w){return w.subject + '-' + w.item;}).join('、') || followSubjects || '各科稳定性') + '。</li>');
     html.push('</ul></div></div></div>');
     html.push('</div>');
     content.innerHTML = html.join('');
@@ -7812,7 +8053,8 @@ function getReportBarSeries(name, data, color) {
 }
 
 function setReportHorizontalBarOption(chart, cfg) {
-    chart.setOption({ title: getReportChartTitle(cfg.title), tooltip: getReportTooltip(), grid: getReportChartGrid(cfg.left, cfg.right, cfg.top, cfg.bottom), xAxis: getReportValueAxis(cfg.xName || ''), yAxis: getReportCategoryAxis(cfg.names || []), series: [getReportBarSeries(cfg.seriesName || '', cfg.values || [], cfg.color)] });
+    var xAxis = Object.assign(getReportValueAxis(cfg.xName || ''), { nameLocation: 'middle', nameGap: 28 });
+    chart.setOption({ title: getReportChartTitle(cfg.title), tooltip: getReportTooltip(), grid: getReportChartGrid(cfg.left, cfg.right, cfg.top, cfg.bottom == null ? 54 : cfg.bottom), xAxis: xAxis, yAxis: getReportCategoryAxis(cfg.names || []), series: [getReportBarSeries(cfg.seriesName || '', cfg.values || [], cfg.color)] });
 }
 
 function getReportPieOption(title, data, colors) {
@@ -8403,7 +8645,7 @@ function renderProgressScatterChart(rows) {
     var chart = echarts.init(el, null, { renderer: 'svg' });
     var points = rows.filter(function(r){ return typeof r.rankDiff === 'number'; }).map(function(r){ return { name: r.name, value: [Number(r.diff.toFixed(1)), r.rankDiff], className: r.className }; });
     if (!points.length) { chart.setOption({ title: { text: '分数变化 vs 名次变化：暂无排名数据', left: 'center', textStyle: { fontSize: 13, color: '#64748b' } } }); return; }
-    chart.setOption({ title: getReportChartTitle('分数变化 vs 名次变化'), tooltip: { formatter: function(p){ return escapeHtml(p.data.name) + '<br>班级：' + escapeHtml(p.data.className) + '<br>分数变化：' + p.value[0] + '<br>名次变化：' + (p.value[1] > 0 ? '↑' + p.value[1] : (p.value[1] < 0 ? '↓' + Math.abs(p.value[1]) : '→0')); }, backgroundColor: 'rgba(15,23,42,.92)', borderWidth: 0, textStyle: { color: '#fff', fontSize: 12 } }, grid: getReportChartGrid(54, 32, 54, 42), xAxis: getReportValueAxis('分数变化'), yAxis: getReportValueAxis('名次变化'), series: [{ type: 'scatter', symbolSize: function(v){ return Math.max(7, Math.min(18, Math.abs(v[1]) / 2 + 7)); }, data: points, itemStyle: { color: function(p){ return p.value[1] > 0 ? REPORT_CHART_THEME.green : (p.value[1] < 0 ? REPORT_CHART_THEME.red : REPORT_CHART_THEME.gray); }, opacity: 0.82 } }] });
+    chart.setOption({ title: getReportChartTitle('分数变化 vs 名次变化'), tooltip: { formatter: function(p){ return escapeHtml(p.data.name) + '<br>班级：' + escapeHtml(p.data.className) + '<br>分数变化：' + p.value[0] + '<br>名次变化：' + (p.value[1] > 0 ? '↑' + p.value[1] : (p.value[1] < 0 ? '↓' + Math.abs(p.value[1]) : '→0')); }, backgroundColor: 'rgba(15,23,42,.92)', borderWidth: 0, textStyle: { color: '#fff', fontSize: 12 } }, grid: getReportChartGrid(64, 32, 54, 58), xAxis: Object.assign(getReportValueAxis('分数变化'), { nameLocation: 'middle', nameGap: 32 }), yAxis: Object.assign(getReportValueAxis('名次变化'), { nameLocation: 'middle', nameGap: 42 }), series: [{ type: 'scatter', symbolSize: function(v){ return Math.max(7, Math.min(18, Math.abs(v[1]) / 2 + 7)); }, data: points, itemStyle: { color: function(p){ return p.value[1] > 0 ? REPORT_CHART_THEME.green : (p.value[1] < 0 ? REPORT_CHART_THEME.red : REPORT_CHART_THEME.gray); }, opacity: 0.82 } }] });
 }
 
 function renderProgressClassStackChart(classStats, allResults) {
@@ -8459,9 +8701,9 @@ function renderProgressClassStackChart(classStats, allResults) {
             textStyle: { color: '#fff', fontSize: 12 },
             formatter: progressClassTooltipFormatter
         },
-        legend: { bottom: 0, textStyle: { color: REPORT_CHART_THEME.axis, fontSize: 11 } },
-        grid: getReportChartGrid(68, 28, 62, 58),
-        xAxis: Object.assign(getReportValueAxis('人数'), { max: Math.max(Math.ceil(maxTotal * 1.06), 5) }),
+        legend: { top: 8, right: 18, orient: 'horizontal', textStyle: { color: REPORT_CHART_THEME.axis, fontSize: 11 } },
+        grid: getReportChartGrid(68, 28, 70, 58),
+        xAxis: Object.assign(getReportValueAxis('人数'), { max: Math.max(Math.ceil(maxTotal * 1.06), 5), nameLocation: 'middle', nameGap: 32 }),
         yAxis: getReportCategoryAxis(classNames),
         series: [
             Object.assign({}, seriesBase, { name: '进步', data: classStats.map(function(c) { return c.rankImproved; }), itemStyle: { color: REPORT_CHART_THEME.progressNormal, borderRadius: [4, 0, 0, 4] } }),
