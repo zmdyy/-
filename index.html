@@ -293,6 +293,7 @@
         .sr-chart-wide { height:280px; grid-column:1 / -1; }
         .sr-track-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
         .sr-track-chart { height:280px; border:1px solid #e5e7eb; border-radius:12px; background:#fff; }
+        .sr-alluvial-chart { height:420px; grid-column:1 / -1; border:1px solid #e5e7eb; border-radius:12px; background:#fff; }
         .sr-note-box { background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:12px; font-size:13px; line-height:1.8; }
         .sr-table { width:100%; border-collapse:collapse; margin-top:8px; }
         .sr-table th, .sr-table td { border:1px solid #e5e7eb; padding:7px 6px; font-size:12px; text-align:center; }
@@ -453,8 +454,10 @@
             body.print-comprehensive-report .sr-section { page-break-inside:auto; break-inside:auto; padding-top:3mm; }
             body.print-comprehensive-report .sr-section h3 { page-break-after:avoid; break-after:avoid; }
             body.print-comprehensive-report .sr-chart,
-            body.print-comprehensive-report .sr-track-chart { page-break-inside:avoid; break-inside:avoid; margin-bottom:8px; }
+            body.print-comprehensive-report .sr-track-chart,
+            body.print-comprehensive-report .sr-alluvial-chart { page-break-inside:avoid; break-inside:avoid; margin-bottom:8px; }
             body.print-comprehensive-report .sr-track-chart { height:220px !important; }
+            body.print-comprehensive-report .sr-alluvial-chart { height:320px !important; }
             body.print-comprehensive-report .sr-grid { page-break-inside:auto; break-inside:auto; }
             body.print-comprehensive-report .sr-table { page-break-inside:auto; break-inside:auto; }
             body.print-comprehensive-report .sr-table tr { page-break-inside:avoid; break-inside:avoid; }
@@ -1533,7 +1536,10 @@
                         <div class="control-group"><label>取线：</label>
                             <select id="criticalLineMode" class="filter-bar-select" style="max-width:92px;">
                                 <option value="ratio">满分比例</option>
+                                <option value="grade_ap">A+最低分</option>
+                                <option value="grade_a">A最低分</option>
                                 <option value="grade_bp">B+最低分</option>
+                                <option value="grade_b">B最低分</option>
                             </select>
                         </div>
                         <div class="control-group" id="criticalLinePercentWrap"><span>比例</span><input type="number" id="criticalLinePercent" value="60" min="1" max="100" style="width:40px;">%</div>
@@ -1757,7 +1763,10 @@
                         <div class="control-group"><label>取线：</label>
                             <select id="smartCriticalLineMode" class="filter-bar-select" style="max-width:92px;">
                                 <option value="ratio">满分比例</option>
+                                <option value="grade_ap">A+最低分</option>
+                                <option value="grade_a">A最低分</option>
                                 <option value="grade_bp">B+最低分</option>
+                                <option value="grade_b">B最低分</option>
                             </select>
                         </div>
                         <div class="control-group" id="smartCriticalLinePercentWrap"><span>比例</span><input type="number" id="smartCriticalLinePercent" value="60" min="1" max="100" style="width:40px;">%</div>
@@ -9465,6 +9474,16 @@ function getGradeFloorScore(subject, gradeLabel, studentList) {
     return { score: min, count: count };
 }
 
+function getCriticalGradeFloorMeta(mode) {
+    var map = {
+        grade_ap: { label: 'A+', title: 'A+最低分' },
+        grade_a: { label: 'A', title: 'A最低分' },
+        grade_bp: { label: 'B+', title: 'B+最低分' },
+        grade_b: { label: 'B', title: 'B最低分' }
+    };
+    return map[mode] || null;
+}
+
 function getCriticalSubjectFullMark(subject) {
     var fullMarks = expandSubjectFullMarks(getSubjectFullMarksFromInputs(), combinedStudentData);
     if (subject && fullMarks[subject] != null) return fullMarks[subject];
@@ -9492,10 +9511,11 @@ function setCriticalPassLineValue(line) {
 
 function syncCriticalLineModeUi() {
     var mode = (document.getElementById('criticalLineMode') || {}).value || 'ratio';
+    var hidePct = !!getCriticalGradeFloorMeta(mode);
     var wrap = document.getElementById('criticalLinePercentWrap');
     var smartWrap = document.getElementById('smartCriticalLinePercentWrap');
-    if (wrap) wrap.style.display = mode === 'grade_bp' ? 'none' : '';
-    if (smartWrap) smartWrap.style.display = mode === 'grade_bp' ? 'none' : '';
+    if (wrap) wrap.style.display = hidePct ? 'none' : '';
+    if (smartWrap) smartWrap.style.display = hidePct ? 'none' : '';
 }
 
 function refreshCriticalPassLine(opts) {
@@ -9513,18 +9533,19 @@ function refreshCriticalPassLine(opts) {
     if (otherPct && pctEl) otherPct.value = pctEl.value;
     syncCriticalLineModeUi();
     if (!subject) return null;
-    if (mode === 'grade_bp') {
+    var gradeMeta = getCriticalGradeFloorMeta(mode);
+    if (gradeMeta) {
         var batchSel = document.getElementById(fromSmart ? 'smartCriticalBatch0' : 'criticalBatch0');
         var batch0 = batchSel && batchSel.value ? DataPool.batches.find(function(b) { return b.id === batchSel.value; }) : null;
         var floorList = (batch0 && batch0.combinedStudentData) || combinedStudentData;
-        var floor = getGradeFloorScore(subject, 'B+', floorList);
+        var floor = getGradeFloorScore(subject, gradeMeta.label, floorList);
         if (!floor) {
-            setCriticalLineHint('该科目没有 B+ 学生');
-            if (!silent && typeof showToast === 'function') showToast('该科目没有等级为 B+ 的学生，分数线未改', 'info');
+            setCriticalLineHint('该科目没有 ' + gradeMeta.label + ' 学生');
+            if (!silent && typeof showToast === 'function') showToast('该科目没有等级为 ' + gradeMeta.label + ' 的学生，分数线未改', 'info');
             return null;
         }
         setCriticalPassLineValue(floor.score);
-        setCriticalLineHint('B+最低分，' + floor.count + '人');
+        setCriticalLineHint(gradeMeta.title + '，' + floor.count + '人');
         return floor.score;
     }
     var pct = parseFloat(pctEl && pctEl.value);
@@ -9587,12 +9608,32 @@ function bindCriticalLineControls() {
 }
 
 var CRITICAL_CATEGORY_META = {
-    improve: { key: 'improve', label: '进步超出临界范围', short: '进步出线' },
-    drop: { key: 'drop', label: '落后在临界范围之下', short: '落到线外' },
-    newIn: { key: 'newIn', label: '新进临界', short: '新进临界' },
-    persist: { key: 'persist', label: '持续临界', short: '持续临界' }
+    improve: { key: 'improve', label: '进步超出临界范围', short: '进步出线', color: '#8FB8B0', bg: 'rgba(143,184,176,0.38)' },
+    drop: { key: 'drop', label: '落后在临界范围之下', short: '落到线外', color: '#9B1C28', bg: 'rgba(226,58,74,0.18)' },
+    newIn: { key: 'newIn', label: '新进临界', short: '新进临界', color: '#1B2A4A', bg: 'rgba(196,165,116,0.42)' },
+    persist: { key: 'persist', label: '持续临界', short: '持续临界', color: '#1B2A4A', bg: 'rgba(27,42,74,0.12)' }
 };
 var CRITICAL_CATEGORY_ORDER = ['improve', 'drop', 'newIn', 'persist'];
+var CRITICAL_ALLUVIAL_THEME = {
+    bg: '#ffffff',
+    navy: '#1B2A4A',
+    above: '#4E8B82',
+    in: '#A67C3A',
+    below: '#C41D32'
+};
+var CRITICAL_ZONE_ORDER = ['above', 'in', 'below'];
+function getCriticalZoneLabel(zone) {
+    if (zone === 'above') return '线上';
+    if (zone === 'in') return '临界';
+    if (zone === 'below') return '线外';
+    return '—';
+}
+function getCriticalZoneColor(zone) {
+    if (zone === 'above') return CRITICAL_ALLUVIAL_THEME.above;
+    if (zone === 'in') return CRITICAL_ALLUVIAL_THEME.in;
+    if (zone === 'below') return CRITICAL_ALLUVIAL_THEME.below;
+    return CRITICAL_ALLUVIAL_THEME.navy;
+}
 
 function getCriticalBatchesNewestFirst() {
     return (DataPool.batches || []).slice().sort(function(a, b) {
@@ -9666,8 +9707,9 @@ function getCriticalSelectedExamSlots() {
 }
 
 function getCriticalExamPassLine(exam, subject, mode, cardLine) {
-    if (mode === 'grade_bp') {
-        var floor = getGradeFloorScore(subject, 'B+', exam.students);
+    var gradeMeta = getCriticalGradeFloorMeta(mode);
+    if (gradeMeta) {
+        var floor = getGradeFloorScore(subject, gradeMeta.label, exam.students);
         return floor ? floor.score : null;
     }
     return cardLine;
@@ -9725,9 +9767,10 @@ function buildCriticalAlertData(className, subject, passLine, range) {
     var examMeta = exams.map(function(ex) {
         var line = getCriticalExamPassLine(ex, subject, mode, passLine);
         var hint = lineSource || '';
-        if (mode === 'grade_bp') {
-            var floor = getGradeFloorScore(subject, 'B+', ex.students);
-            hint = floor ? ('B+最低分，' + floor.count + '人') : '该次无B+';
+        var gradeMeta = getCriticalGradeFloorMeta(mode);
+        if (gradeMeta) {
+            var floor = getGradeFloorScore(subject, gradeMeta.label, ex.students);
+            hint = floor ? (gradeMeta.title + '，' + floor.count + '人') : ('该次无' + gradeMeta.label);
         }
         return { id: ex.id, slotLabel: ex.slotLabel, label: ex.label, line: line, hint: hint, students: ex.students };
     });
@@ -9753,11 +9796,14 @@ function buildCriticalAlertData(className, subject, passLine, range) {
     }
 
     var nameMap = {};
-    (currentExam.students || []).filter(inClass).forEach(function(s) {
-        if (!s || !s.name) return;
-        if (!nameMap[s.name]) nameMap[s.name] = s;
+    examMeta.forEach(function(ex) {
+        (ex.students || []).filter(inClass).forEach(function(s) {
+            if (!s || !s.name) return;
+            if (!nameMap[s.name]) nameMap[s.name] = s;
+        });
     });
     var groups = { improve: [], drop: [], newIn: [], persist: [] };
+    var roster = [];
     Object.keys(nameMap).forEach(function(name) {
         var stu = nameMap[name];
         var points = examMeta.map(function(ex) {
@@ -9773,20 +9819,23 @@ function buildCriticalAlertData(className, subject, passLine, range) {
                 zone: zone
             };
         });
+        if (!points.some(function(p) { return p && p.zone; })) return;
         var cat = classifyCriticalStudent(points);
-        if (!cat) return;
-        var cur = points[0];
-        groups[cat].push({
+        var cur = points[0] || {};
+        var row = {
             name: getStudentDisplayName(stu),
             rawName: name,
             className: stu.class,
             category: cat,
-            categoryLabel: CRITICAL_CATEGORY_META[cat].label,
+            categoryLabel: cat ? CRITICAL_CATEGORY_META[cat].label : '',
             points: points,
             score: cur.score,
             diff: cur.diff,
             line: cur.line
-        });
+        };
+        roster.push(row);
+        if (!cat) return;
+        groups[cat].push(row);
     });
     CRITICAL_CATEGORY_ORDER.forEach(function(k) {
         groups[k].sort(function(a, b) {
@@ -9797,7 +9846,99 @@ function buildCriticalAlertData(className, subject, passLine, range) {
     });
     var listed = [];
     CRITICAL_CATEGORY_ORDER.forEach(function(k) { listed = listed.concat(groups[k]); });
-    return { className: className, subject: subject, passLine: currentLine, range: range, lineSource: currentExam ? currentExam.hint : lineSource, multi: true, exams: examMeta, students: listed, groups: groups };
+    return {
+        className: className,
+        subject: subject,
+        passLine: currentLine,
+        range: range,
+        lineSource: currentExam ? currentExam.hint : lineSource,
+        multi: true,
+        exams: examMeta,
+        students: listed,
+        groups: groups,
+        alluvial: buildCriticalAlluvialModel(examMeta, roster)
+    };
+}
+
+function buildCriticalAlluvialModel(examMeta, rosterRows) {
+    var chrono = (examMeta || []).slice().reverse();
+    var nodes = [];
+    var nodeMap = {};
+    var links = [];
+    var linkMap = {};
+    chrono.forEach(function(ex, depth) {
+        CRITICAL_ZONE_ORDER.forEach(function(zone) {
+            var id = String(ex.id) + '|' + zone;
+            var node = {
+                name: id,
+                depth: depth,
+                examId: ex.id,
+                examLabel: ex.label,
+                slotLabel: ex.slotLabel,
+                zone: zone,
+                zoneLabel: getCriticalZoneLabel(zone),
+                labelText: getCriticalZoneLabel(zone),
+                students: [],
+                itemStyle: { color: getCriticalZoneColor(zone), borderWidth: 0 }
+            };
+            nodeMap[id] = node;
+            nodes.push(node);
+        });
+    });
+    (rosterRows || []).forEach(function(row) {
+        var byExam = {};
+        (row.points || []).forEach(function(p) { if (p && p.examId) byExam[p.examId] = p; });
+        chrono.forEach(function(ex, depth) {
+            var pt = byExam[ex.id];
+            if (!pt || !pt.zone) return;
+            nodeMap[String(ex.id) + '|' + pt.zone].students.push(row);
+            if (depth === 0) return;
+            var prevEx = chrono[depth - 1];
+            var prevPt = byExam[prevEx.id];
+            if (!prevPt || !prevPt.zone) return;
+            var key = String(prevEx.id) + '|' + prevPt.zone + '->' + String(ex.id) + '|' + pt.zone;
+            if (!linkMap[key]) {
+                var fromColor = getCriticalZoneColor(prevPt.zone);
+                linkMap[key] = {
+                    source: String(prevEx.id) + '|' + prevPt.zone,
+                    target: String(ex.id) + '|' + pt.zone,
+                    value: 0,
+                    students: [],
+                    fromZone: prevPt.zone,
+                    toZone: pt.zone,
+                    fromLabel: prevEx.label + ' · ' + getCriticalZoneLabel(prevPt.zone),
+                    toLabel: ex.label + ' · ' + getCriticalZoneLabel(pt.zone),
+                    lineStyle: { color: fromColor }
+                };
+                links.push(linkMap[key]);
+            }
+            linkMap[key].students.push(row);
+            linkMap[key].value += 1;
+        });
+    });
+    nodes.forEach(function(n) {
+        n.labelText = n.zoneLabel + ' ' + n.students.length;
+    });
+    var kept = nodes.filter(function(n) { return n.students.length; });
+    var keptNames = {};
+    kept.forEach(function(n) { keptNames[n.name] = true; });
+    var keptLinks = links.filter(function(l) {
+        return l.value > 0 && keptNames[l.source] && keptNames[l.target];
+    });
+    return { exams: chrono, nodes: kept, links: keptLinks };
+}
+
+function formatCriticalAlluvialStudentHtml(rows) {
+    if (!rows || !rows.length) return '暂无学生';
+    return rows.map(function(s, i) {
+        var chrono = (s.points || []).slice().reverse();
+        var path = chrono.map(function(p) {
+            var z = p.zone ? getCriticalZoneLabel(p.zone) : '—';
+            return escapeHtml(p.label) + ' ' + z + ' ' + formatCriticalDiff(p.diff);
+        }).join(' → ');
+        var cat = s.categoryLabel ? '｜' + escapeHtml(s.categoryLabel) : '';
+        return (i + 1) + '. ' + escapeHtml(s.name) + cat + '<br><span style="color:#64748b;font-size:14px;">' + path + '</span>';
+    }).join('<br>');
 }
 
 function buildCriticalExamHeaders(exams) {
@@ -9821,7 +9962,8 @@ function buildCriticalCategoryTableHtml(data, tableClass) {
         html += '<tr><td colspan="' + (3 + headers.length) + '">所选对比下没有四类临界变化学生</td></tr>';
     } else {
         data.students.forEach(function(s) {
-            html += '<tr><td>' + escapeHtml(s.categoryLabel) + '</td><td>' + escapeHtml(s.name) + '</td>';
+            var meta = CRITICAL_CATEGORY_META[s.category] || { bg: 'transparent', color: '#1B2A4A' };
+            html += '<tr><td style="font-weight:700;background:' + meta.bg + ';color:' + meta.color + ';">' + escapeHtml(s.categoryLabel) + '</td><td>' + escapeHtml(s.name) + '</td>';
             headers.forEach(function(ex) {
                 var pt = null;
                 (s.points || []).forEach(function(p) { if (p.examId === ex.id) pt = p; });
@@ -9874,7 +10016,7 @@ function renderCriticalReadableReport() {
         html.push('</tbody></table></div></div>');
     } else {
         var g = data.groups || { improve: [], drop: [], newIn: [], persist: [] };
-        html.push('<div class="cr-cover"><div><h2>临界生预警图文报告</h2><p>按各次自己的分数线对齐到 0，看谁新进临界、持续贴线、向上出线或落到线外。</p></div>');
+        html.push('<div class="cr-cover"><div><h2>临界生预警图文报告</h2><p>看全班从线上、临界到线外的流向。点击色带或节点可查看姓名。</p></div>');
         html.push('<div class="cr-meta"><div><b>班级：</b>' + escapeHtml(className) + '</div><div><b>科目：</b>' + escapeHtml(subject) + '</div><div><b>临界带：</b>±' + range + '分</div><div><b>各次分数线：</b>' + escapeHtml(buildCriticalExamLineSummary(data)) + '</div></div></div>');
         html.push('<div class="sr-kpis">');
         html.push('<div class="sr-kpi"><div class="sr-kpi-label">进步出线</div><div class="sr-kpi-value">' + g.improve.length + '</div></div>');
@@ -9882,12 +10024,8 @@ function renderCriticalReadableReport() {
         html.push('<div class="sr-kpi"><div class="sr-kpi-label">新进临界</div><div class="sr-kpi-value">' + g.newIn.length + '</div></div>');
         html.push('<div class="sr-kpi"><div class="sr-kpi-label">持续临界</div><div class="sr-kpi-value">' + g.persist.length + '</div></div>');
         html.push('</div>');
-        html.push('<div class="sr-section"><h3>一、分差轨迹（得分 − 该次分数线）</h3><div class="sr-track-grid">');
-        html.push('<div id="criticalTrackImproveChart" class="sr-track-chart"></div>');
-        html.push('<div id="criticalTrackDropChart" class="sr-track-chart"></div>');
-        html.push('<div id="criticalTrackNewChart" class="sr-track-chart"></div>');
-        html.push('<div id="criticalTrackPersistChart" class="sr-track-chart"></div>');
-        html.push('</div></div>');
+        html.push('<div class="sr-section"><h3>一、全班流向（线上 / 临界 / 线外）</h3>');
+        html.push('<div id="criticalAlluvialChart" class="sr-alluvial-chart"></div></div>');
         html.push('<div class="sr-section"><h3>二、四类名单（各次分 / 该次线）</h3>');
         html.push(buildCriticalCategoryTableHtml(data, 'sr-table'));
         html.push('</div></div>');
@@ -9975,14 +10113,107 @@ function renderCriticalTrackChart(elId, title, rows, range) {
     });
 }
 
+function renderCriticalAlluvialChart(data) {
+    var el = document.getElementById('criticalAlluvialChart');
+    if (!el || typeof echarts === 'undefined') return;
+    safeDisposeChart(el);
+    var chart = echarts.init(el, null, { renderer: 'svg' });
+    var model = (data && data.alluvial) || { exams: [], nodes: [], links: [] };
+    if (!model.nodes.length) {
+        chart.setOption({
+            backgroundColor: CRITICAL_ALLUVIAL_THEME.bg,
+            title: { text: '暂无有效分数，无法绘制流向', left: 'center', top: 'middle', textStyle: { fontSize: 14, color: CRITICAL_ALLUVIAL_THEME.navy } }
+        });
+        return;
+    }
+    var exams = model.exams || [];
+    var n = exams.length;
+    var graphics = exams.map(function(ex, i) {
+        var item = {
+            type: 'text',
+            top: 10,
+            bounding: 'raw',
+            style: {
+                text: ex.label,
+                fill: CRITICAL_ALLUVIAL_THEME.navy,
+                fontSize: 13,
+                fontWeight: 700,
+                fontFamily: 'inherit'
+            }
+        };
+        if (n <= 1) item.left = 'center';
+        else if (i === n - 1) item.right = '8%';
+        else if (i === 0) item.left = '8%';
+        else item.left = (8 + i * (84 / Math.max(n - 1, 1))) + '%';
+        return item;
+    });
+    chart.setOption({
+        backgroundColor: CRITICAL_ALLUVIAL_THEME.bg,
+        tooltip: {
+            trigger: 'item',
+            formatter: function(p) {
+                if (p.dataType === 'node' && p.data) {
+                    return escapeHtml(p.data.examLabel) + ' · ' + p.data.zoneLabel + '：' + (p.data.students || []).length + '人<br>点击查看名单';
+                }
+                if (p.dataType === 'edge' && p.data) {
+                    return escapeHtml(p.data.fromLabel) + ' → ' + escapeHtml(p.data.toLabel) + '：' + p.data.value + '人<br>点击查看名单';
+                }
+                return '';
+            }
+        },
+        legend: { show: false },
+        graphic: graphics,
+        series: [{
+            type: 'sankey',
+            orient: 'horizontal',
+            layoutIterations: 0,
+            sort: null,
+            draggable: false,
+            nodeAlign: 'justify',
+            nodeGap: 18,
+            nodeWidth: 16,
+            left: '8%',
+            right: '8%',
+            top: 42,
+            bottom: 12,
+            data: model.nodes,
+            links: model.links,
+            lineStyle: { color: 'source', curveness: 0.5, opacity: 0.52 },
+            itemStyle: { borderWidth: 0 },
+            label: {
+                color: CRITICAL_ALLUVIAL_THEME.navy,
+                fontSize: 12,
+                fontWeight: 600,
+                formatter: function(p) { return (p.data && p.data.labelText) || p.name; }
+            },
+            emphasis: {
+                focus: 'adjacency',
+                lineStyle: { opacity: 0.75 }
+            }
+        }]
+    });
+    chart.off('click');
+    chart.on('click', function(params) {
+        if (params.dataType === 'node' && params.data && params.data.students) {
+            showStudentListModal(
+                params.data.examLabel + ' · ' + params.data.zoneLabel + '（' + params.data.students.length + '人）',
+                formatCriticalAlluvialStudentHtml(params.data.students)
+            );
+            return;
+        }
+        if (params.dataType === 'edge' && params.data && params.data.students) {
+            showStudentListModal(
+                params.data.fromLabel + ' → ' + params.data.toLabel + '（' + params.data.value + '人）',
+                formatCriticalAlluvialStudentHtml(params.data.students)
+            );
+        }
+    });
+}
+
 function renderCriticalReadableCharts(data) {
     if (typeof echarts === 'undefined') return;
     if (data.multi) {
-        var g = data.groups || { improve: [], drop: [], newIn: [], persist: [] };
-        renderCriticalTrackChart('criticalTrackImproveChart', '进步出线', g.improve, data.range);
-        renderCriticalTrackChart('criticalTrackDropChart', '落到线外', g.drop, data.range);
-        renderCriticalTrackChart('criticalTrackNewChart', '新进临界', g.newIn, data.range);
-        renderCriticalTrackChart('criticalTrackPersistChart', '持续临界', g.persist, data.range);
+        renderCriticalAlluvialChart(data);
         return;
     }
     var distEl = document.getElementById('criticalReportDistanceChart');
