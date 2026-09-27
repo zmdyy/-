@@ -1,0 +1,21 @@
+name: Build opening report package
+on:
+  push:
+    branches:
+      - chatgpt-opening-report-20260927
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Build Word files
+        run: python build_opening_report.py
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: junior-physics-opening-report-package
+          path: dist/*
+          retention-days: 7
