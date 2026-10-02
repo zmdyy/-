@@ -461,8 +461,9 @@ async function resolveNotebookImage(src) {
     }
 
     try {
-        if (typeof MINERU_API_BASE !== 'undefined' && /^https?:\/\//i.test(src)) {
-            var proxyUrl = String(MINERU_API_BASE || '').replace(/\/+$/, '') + '/mineru/fetch-asset?url=' + encodeURIComponent(src);
+        if (/^https?:\/\//i.test(src)) {
+            var notebookAssetProxyBase = 'https://xqksh-zxxq-mineru-zmdyy.onrender.com';
+            var proxyUrl = notebookAssetProxyBase + '/mineru/fetch-asset?url=' + encodeURIComponent(src);
             var proxyResp = await fetch(proxyUrl, { mode: 'cors', cache: 'no-store' });
             var proxied = await readResp(proxyResp, src);
             if (proxied) return proxied;
