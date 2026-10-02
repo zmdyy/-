@@ -1129,7 +1129,8 @@
     <div class="analysis-nav-layout" data-analysis-nav="collective">
         <nav class="analysis-section-nav" aria-label="小题分析章节导航">
             <div class="analysis-section-nav-title">小题分析</div>
-            <button type="button" class="analysis-nav-item active" data-analysis-target="collectiveQuestionSection">小题统计</button>
+            <button type="button" class="analysis-nav-item active" data-analysis-target="collectiveHeatmapSection">异常热力图</button>
+            <button type="button" class="analysis-nav-item" data-analysis-target="collectiveQuestionSection">小题统计</button>
             <button type="button" class="analysis-nav-item" data-analysis-target="collectiveLevelSection">等级分析</button>
             <button type="button" class="analysis-nav-item" data-analysis-target="collectiveRankSection">名次区间分析</button>
             <button type="button" class="analysis-nav-item" data-analysis-target="collectiveStudentSection">学生查询</button>
@@ -1137,7 +1138,7 @@
             <button type="button" class="analysis-nav-item analysis-nav-top" data-analysis-top="true">↑ 回到顶部</button>
         </nav>
         <div class="analysis-content">
-    <div class="statistics-section analysis-anchor-section" id="collectiveQuestionSection" data-analysis-section="collectiveQuestionSection">
+    <div class="statistics-section analysis-anchor-section" id="collectiveHeatmapSection" data-analysis-section="collectiveHeatmapSection">
         <div class="filter-stats-bar">
             <div class="filter-bar-item"><span class="filter-bar-label">筛选班级：</span>
                 <select id="collectiveClassFilter" class="filter-bar-select"></select>
@@ -1150,6 +1151,36 @@
                 <button class="filter-btn" id="applyCollectiveThresholdBtn" style="padding:4px 8px;font-size:12px;margin-left:4px;">应用</button>
             </div>
         </div>
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:10px;">
+            <div>
+                <h3 style="margin:0 0 4px;font-size:1.18em;">小题异常热力图</h3>
+                <div style="font-size:12px;color:#64748b;line-height:1.6;">横向看题目，纵向看全班与各等级/分层。点击单元格可查看这道题在对应群体中的异常学生。</div>
+            </div>
+            <div id="collectiveHeatmapSummary" style="font-size:12px;color:#475569;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:6px 9px;">等待数据</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;padding:8px 10px;background:#fafbfc;border:1px solid #e5e7eb;border-radius:8px;">
+            <label style="font-size:13px;font-weight:700;">查看：</label>
+            <select id="collectiveHeatmapMode" class="filter-bar-select" style="width:140px;">
+                <option value="anomaly">异常度</option>
+                <option value="rate" selected>得分率</option>
+                <option value="student">学生 × 小题</option>
+            </select>
+            <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;">
+                <input type="checkbox" id="collectiveHeatmapOnlyAbnormal">
+                <span>只看异常题</span>
+            </label>
+            <span id="collectiveHeatmapLegendText" style="font-size:12px;color:#64748b;margin-left:auto;">得分率：颜色越偏红表示得分率越低，越偏蓝表示得分率越高</span>
+        </div>
+        <div id="collectiveHeatmapEmpty" style="display:none;padding:22px;text-align:center;color:#94a3b8;">暂无可绘制的小题数据。</div>
+        <div id="collectiveHeatmapScroll" style="overflow-x:auto;overflow-y:hidden;border:1px solid #e5e7eb;border-radius:10px;background:#fff;">
+            <div id="collectiveHeatmapChart" style="height:324px;min-width:810px;"></div>
+        </div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:7px;line-height:1.6;">
+            异常度与“只看异常题”使用同一套规则：优先采用成绩表已有等级；没有等级时再按 30% / 40% / 30% 相对分层。
+        </div>
+    </div>
+
+    <div class="statistics-section analysis-anchor-section" id="collectiveQuestionSection" data-analysis-section="collectiveQuestionSection">
         <div style="font-size:15px;font-weight:bold;color:#2980b9;margin-bottom:4px;" id="allStatsTitle"></div>
         <div class="scroll-container" style="max-height:320px;">
             <table id="questionStatsTable"><thead><tr>
@@ -5390,6 +5421,7 @@ function renderCollectiveAll() {
     }
     renderCollectiveClassFilter();
     renderCollectiveSubjectFilter();
+    renderCollectiveHeatmap();
     renderCollectiveTables();
     renderCollectiveRankBar();
     document.getElementById('rankedAnalysisResult').innerHTML = '';
@@ -5469,6 +5501,676 @@ function getCollectiveFilteredData() {
     if (!cd.classField || !sc) return cd;
     return { ...cd, data: cd.data.filter(r => r[cd.classField] == sc) };
 }
+
+
+// ============================================================
+//  小题异常热力图：得分率 / 异常度 / 学生 × 小题
+//  异常判定沿用同一套透明规则；不依赖知识星球模块。
+// ============================================================
+function diagSafeNumber(v) {
+    if (v === null || v === undefined || String(v).trim() === '') return null;
+    var n = Number(v);
+    return isFinite(n) ? n : null;
+}
+
+function buildCollectiveQuestionModels(fd, subjectName) {
+    var hc = utilSplitHeaderCols(fd.headers || []);
+    var qd = utilBuildQuestionDict(hc.scoreCols, hc.ansCols, fd, subjectName);
+    var questions = [];
+    Object.keys(qd).forEach(function(title) {
+        var item = qd[title];
+        var full = Number(item.fullScore);
+        if (item.scoreIdx == null || !isFinite(full) || full <= 0) return;
+        var header = fd.headers[item.scoreIdx];
+        var students = [];
+        (fd.data || []).forEach(function(row) {
+            var score = diagSafeNumber(row[header]);
+            if (score === null || score < 0 || score > full) return;
+            students.push({
+                row: row,
+                name: String(row[fd.nameField] || ''),
+                className: String(row[fd.classField] || ''),
+                score: score,
+                rate: score / full
+            });
+        });
+        if (!students.length) return;
+        var avgRate = students.reduce(function(sum, x) { return sum + x.rate; }, 0) / students.length;
+        questions.push({
+            title: title,
+            item: item,
+            scoreHeader: item.scoreHeader || header,
+            fullScore: full,
+            students: students,
+            overallRate: avgRate
+        });
+    });
+    return questions;
+}
+
+function buildCollectiveStudentBaselines(questions) {
+    var stats = new Map();
+    (questions || []).forEach(function(q) {
+        q.students.forEach(function(s) {
+            var row = s.row;
+            var current = stats.get(row) || { sum:0, count:0 };
+            current.sum += s.rate;
+            current.count += 1;
+            stats.set(row, current);
+        });
+    });
+    var averages = new Map();
+    stats.forEach(function(item, row) {
+        averages.set(row, item.count ? item.sum / item.count : null);
+    });
+    return { averages:averages, stats:stats };
+}
+
+function getCollectiveStudentBaselineExcludingItem(stats, student) {
+    if (!stats || !student) return null;
+    var item = stats.get(student.row);
+    if (!item || item.count <= 1) return null;
+    var count = item.count - 1;
+    var sum = item.sum - student.rate;
+    return count > 0 ? sum / count : null;
+}
+
+function getCollectiveIndividualThreshold(tier) {
+    if (!tier) return 0.30;
+    if (tier.source === 'grade') {
+        var grade = String(tier.label || '').replace(/等级$/,'').trim().toUpperCase();
+        if (grade === 'A+' || grade === 'A') return 0.20;
+        if (grade === 'A-' || /^B[+-]?$/.test(grade)) return 0.25;
+        return 0.30;
+    }
+    if (tier.key === 'relative-high') return 0.20;
+    if (tier.key === 'relative-middle') return 0.25;
+    return 0.30;
+}
+
+function splitCollectiveAbilityTiers(fd, questions, baselines, subjectName) {
+    var rows = (fd.data || []).slice();
+    if (!rows.length) return [];
+
+    // 优先使用系统已经导入的真实等级数据。
+    // 选择具体科目时使用“科目_等级”；未选科目时优先使用总分科目的等级。
+    var gradeField = '';
+    if (subjectName && fd.headers.indexOf(subjectName + '_等级') >= 0) {
+        gradeField = subjectName + '_等级';
+    } else if (!subjectName && fd.fullScoreField) {
+        var totalSubject = String(fd.fullScoreField).replace(/_分数$/, '');
+        if (totalSubject && fd.headers.indexOf(totalSubject + '_等级') >= 0) gradeField = totalSubject + '_等级';
+    }
+
+    if (gradeField) {
+        var gradeGroups = {};
+        rows.forEach(function(row) {
+            var raw = row[gradeField];
+            var grade = raw === null || raw === undefined ? '' : String(raw).trim();
+            if (!grade) return;
+            if (!gradeGroups[grade]) gradeGroups[grade] = [];
+            gradeGroups[grade].push(row);
+        });
+
+        var gradeOrder = ['A+','A','A-','B+','B','B-','C+','C','C-','D+','D','D-','E','F'];
+        var gradeLabels = Object.keys(gradeGroups).sort(function(a,b) {
+            var au = a.toUpperCase(), bu = b.toUpperCase();
+            var ia = gradeOrder.indexOf(au), ib = gradeOrder.indexOf(bu);
+            if (ia !== -1 && ib !== -1) return ia - ib;
+            if (ia !== -1) return -1;
+            if (ib !== -1) return 1;
+            return a.localeCompare(b, 'zh-CN', { numeric:true });
+        });
+
+        var gradeTiers = gradeLabels.map(function(grade) {
+            return {
+                key:'grade:' + grade,
+                label:grade + '等级',
+                rows:gradeGroups[grade],
+                source:'grade',
+                gradeField:gradeField
+            };
+        }).filter(function(t) { return t.rows.length >= 1; });
+
+        // 只要存在真实等级就直接使用。即使全班都属于同一等级，
+        // “同等级本题均值”仍可作为个性异常的参照，不再强行回退到人为分层。
+        if (gradeTiers.length >= 1) return gradeTiers;
+    }
+
+    // 没有可比较的等级组时，回退到当前筛选范围内的 30% / 40% / 30% 相对分层。
+    if (rows.length < 9) return [];
+    var subjectScoreField = subjectName ? subjectName + '_分数' : '';
+    var rankRows = rows.map(function(row) {
+        var total = subjectScoreField ? diagSafeNumber(row[subjectScoreField]) : null;
+        var baseline = baselines.get(row);
+        var rankValue = total !== null ? total : (baseline !== null && baseline !== undefined ? baseline : -Infinity);
+        return { row: row, rankValue: rankValue };
+    }).filter(function(x) { return isFinite(x.rankValue); });
+    if (rankRows.length < 9) return [];
+    rankRows.sort(function(a,b) { return b.rankValue - a.rankValue; });
+    var n = rankRows.length;
+    var highN = Math.max(3, Math.round(n * 0.30));
+    var lowN = Math.max(3, Math.round(n * 0.30));
+    if (highN + lowN >= n) {
+        highN = Math.max(2, Math.floor(n / 3));
+        lowN = highN;
+    }
+    return [
+        { key:'relative-high', label:'相对高分段', rows:rankRows.slice(0, highN).map(function(x){ return x.row; }), source:'percentile' },
+        { key:'relative-middle', label:'相对中等段', rows:rankRows.slice(highN, n - lowN).map(function(x){ return x.row; }), source:'percentile' },
+        { key:'relative-low', label:'相对基础段', rows:rankRows.slice(n - lowN).map(function(x){ return x.row; }), source:'percentile' }
+    ].filter(function(t) { return t.rows.length >= 3; });
+}
+
+function calculateCollectiveDiagnosis(fd, subjectName) {
+    var threshold = Math.max(0, Math.min(1, (Number(collectiveThreshold) || 60) / 100));
+    var questions = buildCollectiveQuestionModels(fd, subjectName);
+    var baselineInfo = buildCollectiveStudentBaselines(questions);
+    var baselines = baselineInfo.averages;
+    var baselineStats = baselineInfo.stats;
+    var tiers = splitCollectiveAbilityTiers(fd, questions, baselines, subjectName);
+    var tierByRow = new Map();
+    tiers.forEach(function(tier) {
+        (tier.rows || []).forEach(function(row) { tierByRow.set(row, tier); });
+    });
+    var results = { common:[], individual:[], questions:questions };
+
+    questions.forEach(function(q) {
+        var lowStudents = q.students.filter(function(s) { return s.rate < threshold; });
+        var mapping = null;
+        var isCommon = q.overallRate < threshold;
+
+        if (isCommon) {
+            results.common.push({
+                type:'common', title:q.title, scoreHeader:q.scoreHeader,
+                overallRate:q.overallRate, fullScore:q.fullScore,
+                affected:lowStudents, affectedCount:lowStudents.length,
+                totalCount:q.students.length, mapping:mapping,
+                note:'全体得分率低于当前阈值，优先作为共性教学问题处理。'
+            });
+        }
+
+        var tierRates = new Map();
+        tiers.forEach(function(tier) {
+            var tierSet = new Set(tier.rows || []);
+            var qStudents = q.students.filter(function(s) { return tierSet.has(s.row); });
+            if (qStudents.length >= 3) {
+                tierRates.set(tier.key, qStudents.reduce(function(sum,s){ return sum + s.rate; },0) / qStudents.length);
+            }
+        });
+
+        var anomalies = q.students.map(function(s) {
+            var tier = tierByRow.get(s.row) || null;
+            var deviationThreshold = getCollectiveIndividualThreshold(tier);
+            var personalBaseline = getCollectiveStudentBaselineExcludingItem(baselineStats, s);
+            var peerBaseline = tier && tierRates.has(tier.key) ? tierRates.get(tier.key) : null;
+            var personalGap = personalBaseline == null ? null : personalBaseline - s.rate;
+            var peerGap = peerBaseline == null ? null : peerBaseline - s.rate;
+            var personalHit = personalGap !== null && personalGap >= deviationThreshold;
+            var peerHit = peerGap !== null && peerGap >= deviationThreshold;
+            var hit = isCommon ? (personalHit && peerHit) : (personalHit || peerHit);
+            if (!hit) return null;
+
+            var reasons = [];
+            if (personalHit) reasons.push('个人');
+            if (peerHit) reasons.push('同层');
+            var severity = Math.max(personalGap === null ? -Infinity : personalGap, peerGap === null ? -Infinity : peerGap);
+            return {
+                row:s.row, name:s.name, className:s.className, score:s.score, rate:s.rate,
+                personalBaseline:personalBaseline, peerBaseline:peerBaseline,
+                personalGap:personalGap, peerGap:peerGap,
+                threshold:deviationThreshold,
+                tierLabel:tier ? tier.label : '',
+                tierSource:tier ? tier.source : '',
+                reason:reasons.join('+'), severity:severity
+            };
+        }).filter(Boolean).sort(function(a,b) { return b.severity - a.severity; });
+
+        if (anomalies.length) {
+            results.individual.push({
+                type:'individual', title:q.title, scoreHeader:q.scoreHeader,
+                overallRate:q.overallRate, fullScore:q.fullScore,
+                affected:anomalies, affectedCount:anomalies.length,
+                totalCount:q.students.length, severity:anomalies[0].severity,
+                mapping:mapping,
+                note:isCommon
+                    ? '该题同时属于共性异常；这里只保留个人与同级均明显偏离的学生。'
+                    : '结合其余题均值与同级均值识别明显偏离。'
+            });
+        }
+    });
+
+    results.common.sort(function(a,b){ return a.overallRate - b.overallRate; });
+    results.individual.sort(function(a,b){ return b.severity - a.severity || b.affectedCount - a.affectedCount || a.overallRate - b.overallRate; });
+    return results;
+}
+
+
+var collectiveHeatmapContext = null;
+
+function getCollectiveHeatmapQuestionLabel(q, index) {
+    var raw = '';
+    try { raw = utilGetTitle(q.scoreHeader || q.title || ''); } catch(e) { raw = String(q.title || q.scoreHeader || ''); }
+    raw = String(raw || q.title || q.scoreHeader || '').trim();
+    var m = raw.match(/(?:^|[^0-9])(\d{1,3})(?:\s*[\.、：:]|\s*题|$)/);
+    if (m) return m[1] + '题';
+    var shortText = String(q.title || '').replace(/\s+/g,' ').trim();
+    if (shortText.length > 8) shortText = shortText.slice(0,8) + '…';
+    return shortText || ('题' + (index + 1));
+}
+
+function buildCollectiveHeatmapModel(fd, subjectName) {
+    var diagnosis = calculateCollectiveDiagnosis(fd, subjectName);
+    var questions = diagnosis.questions || [];
+    if (!questions.length) return null;
+    var baselineInfo = buildCollectiveStudentBaselines(questions);
+    var tiers = splitCollectiveAbilityTiers(fd, questions, baselineInfo.averages, subjectName);
+    var threshold = Math.max(0, Math.min(1, (Number(collectiveThreshold) || 60) / 100));
+    var commonMap = new Map();
+    var individualMap = new Map();
+    (diagnosis.common || []).forEach(function(entry) { commonMap.set(entry.scoreHeader || entry.title, entry); });
+    (diagnosis.individual || []).forEach(function(entry) { individualMap.set(entry.scoreHeader || entry.title, entry); });
+
+    var rows = [{ key:'__all__', label:'全班', source:'all', rows:(fd.data || []).slice() }].concat(tiers.map(function(tier) {
+        return {
+            key:tier.key,
+            label:String(tier.label || tier.key).replace(/等级$/,''),
+            fullLabel:tier.label || tier.key,
+            source:tier.source,
+            rows:tier.rows || []
+        };
+    }));
+
+    var questionModels = questions.map(function(q, qi) {
+        var key = q.scoreHeader || q.title;
+        var commonEntry = commonMap.get(key) || null;
+        var individualEntry = individualMap.get(key) || null;
+        var anomalyRows = new Set((individualEntry && individualEntry.affected || []).map(function(x) { return x.row; }));
+        var lowRows = new Set(q.students.filter(function(x) { return x.rate < threshold; }).map(function(x) { return x.row; }));
+        var cells = rows.map(function(rowInfo, ri) {
+            var rowSet = new Set(rowInfo.rows || []);
+            var qStudents = ri === 0 ? q.students.slice() : q.students.filter(function(x) { return rowSet.has(x.row); });
+            var avgRate = qStudents.length ? qStudents.reduce(function(sum, x) { return sum + x.rate; }, 0) / qStudents.length : null;
+            var anomalyCount;
+            var anomalyLabel;
+            if (ri === 0) {
+                if (commonEntry) {
+                    anomalyCount = qStudents.filter(function(x) { return lowRows.has(x.row); }).length;
+                    anomalyLabel = '低于阈值';
+                } else {
+                    anomalyCount = qStudents.filter(function(x) { return anomalyRows.has(x.row); }).length;
+                    anomalyLabel = '个性异常';
+                }
+            } else {
+                anomalyCount = qStudents.filter(function(x) { return anomalyRows.has(x.row); }).length;
+                anomalyLabel = '个性异常';
+            }
+            var anomalyRate = qStudents.length ? anomalyCount / qStudents.length : null;
+            return {
+                rowIndex:ri,
+                rowKey:rowInfo.key,
+                rowLabel:rowInfo.label,
+                qStudents:qStudents,
+                avgRate:avgRate,
+                anomalyCount:anomalyCount,
+                anomalyRate:anomalyRate,
+                anomalyLabel:anomalyLabel
+            };
+        });
+        return {
+            index:qi,
+            key:key,
+            q:q,
+            label:getCollectiveHeatmapQuestionLabel(q, qi),
+            commonEntry:commonEntry,
+            individualEntry:individualEntry,
+            isAbnormal:!!(commonEntry || individualEntry),
+            cells:cells
+        };
+    });
+
+    return {
+        fd:fd,
+        subjectName:subjectName || '',
+        threshold:threshold,
+        rows:rows,
+        questions:questionModels,
+        commonCount:(diagnosis.common || []).length,
+        individualQuestionCount:(diagnosis.individual || []).length
+    };
+}
+
+function renderCollectiveHeatmap(fd, subjectName) {
+    var chartEl = document.getElementById('collectiveHeatmapChart');
+    var scrollEl = document.getElementById('collectiveHeatmapScroll');
+    var emptyEl = document.getElementById('collectiveHeatmapEmpty');
+    var summaryEl = document.getElementById('collectiveHeatmapSummary');
+    var legendEl = document.getElementById('collectiveHeatmapLegendText');
+    if (!chartEl || !scrollEl) return;
+
+    if (!fd) fd = getCollectiveFilteredData();
+    if (subjectName == null) subjectName = getSelectedSubject();
+    var model = (!fd || !fd.headers || !fd.headers.length || !fd.data || !fd.data.length) ? null : buildCollectiveHeatmapModel(fd, subjectName);
+    collectiveHeatmapContext = model;
+
+    if (!model || !model.questions.length) {
+        if (chartEl.__chart) { try { chartEl.__chart.dispose(); } catch(e) {} chartEl.__chart = null; }
+        chartEl.innerHTML = '';
+        scrollEl.style.display = 'none';
+        if (emptyEl) emptyEl.style.display = 'block';
+        if (summaryEl) summaryEl.textContent = '暂无数据';
+        return;
+    }
+
+    scrollEl.style.display = 'block';
+    if (emptyEl) emptyEl.style.display = 'none';
+
+    var modeEl = document.getElementById('collectiveHeatmapMode');
+    var onlyEl = document.getElementById('collectiveHeatmapOnlyAbnormal');
+    var mode = modeEl ? modeEl.value : 'rate';
+    var onlyAbnormal = !!(onlyEl && onlyEl.checked);
+
+    if (mode === 'student') {
+        renderCollectiveStudentOverviewHeatmap(model, onlyAbnormal, chartEl, scrollEl, summaryEl, legendEl);
+        return;
+    }
+
+    var questions = onlyAbnormal ? model.questions.filter(function(qm) { return qm.isAbnormal; }) : model.questions.slice();
+
+    if (summaryEl) {
+        summaryEl.textContent = '共 ' + model.questions.length + ' 题 · 共性异常 ' + model.commonCount + ' 题 · 存在个性异常 ' + model.individualQuestionCount + ' 题'
+            + (onlyAbnormal ? ' · 当前仅显示异常题 ' + questions.length + ' 题' : '');
+    }
+    if (legendEl) {
+        legendEl.textContent = mode === 'anomaly'
+            ? '异常度：全班看低于阈值/个性异常比例；各等级看个性异常学生占比'
+            : '得分率：颜色越偏红表示得分率越低，越偏蓝表示得分率越高';
+    }
+
+    if (!questions.length) {
+        if (chartEl.__chart) { try { chartEl.__chart.dispose(); } catch(e) {} chartEl.__chart = null; }
+        chartEl.innerHTML = '<div style="padding:28px;text-align:center;color:#94a3b8;">当前筛选范围内没有异常题。</div>';
+        chartEl.style.width = '100%';
+        chartEl.style.height = '120px';
+        return;
+    }
+
+    var rowLabels = model.rows.map(function(r) { return r.label; });
+    var colLabels = questions.map(function(qm) { return qm.label; });
+    var data = [];
+    questions.forEach(function(qm, xi) {
+        qm.cells.forEach(function(cell, yi) {
+            if (cell.avgRate == null) return;
+            var value = mode === 'rate' ? cell.avgRate * 100 : (cell.anomalyRate == null ? 0 : cell.anomalyRate * 100);
+            data.push({
+                value:[xi, yi, Math.round(value * 10) / 10],
+                heatMeta:{ questionIndex:qm.index, rowIndex:yi }
+            });
+        });
+    });
+
+    // 得分率 / 异常度：格子尺寸缩至原来的 90%。
+    var minCellWidth = questions.length > 36 ? 38 : 45;
+    var chartWidth = Math.max(810, questions.length * minCellWidth + 162);
+    var chartHeight = Math.max(270, rowLabels.length * 43 + 135);
+    chartEl.style.width = chartWidth + 'px';
+    chartEl.style.height = chartHeight + 'px';
+
+    if (chartEl.__chart) { try { chartEl.__chart.dispose(); } catch(e) {} }
+    var chart = echarts.init(chartEl, null, {renderer:'svg'});
+    chartEl.__chart = chart;
+    var showLabels = questions.length <= 24;
+    var colors = mode === 'anomaly'
+        ? ['#f8fafc','#ffedd5','#fdba74','#f97316','#dc2626','#7f1d1d']
+        : ['#b91c1c','#f97316','#fde68a','#bfdbfe','#2563eb'];
+
+    chart.setOption({
+        tooltip:{
+            confine:true,
+            formatter:function(params) {
+                if (!params || !params.data || !params.data.heatMeta) return '';
+                var qm = model.questions[params.data.heatMeta.questionIndex];
+                var cell = qm && qm.cells[params.data.heatMeta.rowIndex];
+                if (!qm || !cell) return '';
+                var rateText = cell.avgRate == null ? '-' : Math.round(cell.avgRate * 100) + '%';
+                var anomalyText = cell.anomalyRate == null ? '-' : Math.round(cell.anomalyRate * 100) + '%';
+                return '<b>' + escapeHtml(qm.label) + ' · ' + escapeHtml(cell.rowLabel) + '</b>'
+                    + '<br/>平均得分率：' + rateText
+                    + '<br/>' + escapeHtml(cell.anomalyLabel) + '：' + cell.anomalyCount + '/' + cell.qStudents.length + '（' + anomalyText + '）'
+                    + (qm.commonEntry ? '<br/><span style="color:#b91c1c;font-weight:700;">共性异常</span>' : '')
+                    + '<br/><span style="color:#64748b;">点击查看本题异常学生</span>';
+            }
+        },
+        grid:{ left:92, right:28, top:28, bottom:88 },
+        xAxis:{
+            type:'category',
+            data:colLabels,
+            splitArea:{show:true},
+            axisTick:{show:false},
+            axisLabel:{fontSize:11,interval:0,rotate:questions.length > 28 ? 45 : 0,color:'#475569'}
+        },
+        yAxis:{
+            type:'category',
+            data:rowLabels,
+            inverse:true,
+            splitArea:{show:true},
+            axisTick:{show:false},
+            axisLine:{show:false},
+            axisLabel:{fontSize:12,color:'#334155',fontWeight:700}
+        },
+        visualMap:{
+            min:0,max:100,
+            orient:'horizontal',
+            left:'center',
+            bottom:18,
+            calculable:false,
+            text: mode === 'anomaly' ? ['高异常','低异常'] : ['高得分率','低得分率'],
+            textStyle:{fontSize:11,color:'#64748b'},
+            inRange:{color:colors}
+        },
+        series:[{
+            type:'heatmap',
+            data:data,
+            progressive:0,
+            label:{
+                show:showLabels,
+                fontSize:10,
+                formatter:function(p){ return Math.round(p.value[2]) + '%'; },
+                color:'#1f2937'
+            },
+            itemStyle:{borderColor:'#ffffff',borderWidth:2},
+            emphasis:{itemStyle:{borderColor:'#334155',borderWidth:2,shadowBlur:6,shadowColor:'rgba(15,23,42,.22)'}}
+        }]
+    });
+    chart.off('click');
+    chart.on('click', function(params) {
+        if (!params || !params.data || !params.data.heatMeta) return;
+        showCollectiveHeatmapCellDetail(params.data.heatMeta.questionIndex, params.data.heatMeta.rowIndex);
+    });
+    chart.resize();
+}
+
+function renderCollectiveStudentOverviewHeatmap(model, onlyAbnormal, chartEl, scrollEl, summaryEl, legendEl) {
+    var questions = onlyAbnormal ? model.questions.filter(function(qm) { return qm.isAbnormal; }) : model.questions.slice();
+    if (!questions.length) {
+        if (chartEl.__chart) { try { chartEl.__chart.dispose(); } catch(e) {} chartEl.__chart = null; }
+        chartEl.innerHTML = '<div style="padding:28px;text-align:center;color:#94a3b8;">当前筛选范围内没有异常题。</div>';
+        chartEl.style.width = '100%';
+        chartEl.style.height = '120px';
+        if (summaryEl) summaryEl.textContent = '当前没有可显示的异常题';
+        return;
+    }
+
+    var allQuestions = model.questions || [];
+    var baselineInfo = buildCollectiveStudentBaselines(allQuestions.map(function(x){ return x.q; }));
+    var studentRows = (model.fd.data || []).slice();
+    var anomalyCountByRow = new Map();
+    allQuestions.forEach(function(qm) {
+        (qm.individualEntry && qm.individualEntry.affected || []).forEach(function(x) {
+            anomalyCountByRow.set(x.row, (anomalyCountByRow.get(x.row) || 0) + 1);
+        });
+    });
+    studentRows.sort(function(a,b) {
+        var diff = (anomalyCountByRow.get(b) || 0) - (anomalyCountByRow.get(a) || 0);
+        if (diff) return diff;
+        return String(a[model.fd.nameField] || '').localeCompare(String(b[model.fd.nameField] || ''),'zh-CN');
+    });
+
+    var qMaps = questions.map(function(qm) {
+        var mp = new Map();
+        (qm.q.students || []).forEach(function(x){ mp.set(x.row, x); });
+        return mp;
+    });
+    var anomalySets = questions.map(function(qm) {
+        return new Set((qm.individualEntry && qm.individualEntry.affected || []).map(function(x){ return x.row; }));
+    });
+
+    var data = [];
+    studentRows.forEach(function(row, yi) {
+        questions.forEach(function(qm, xi) {
+            var stu = qMaps[xi].get(row);
+            if (!stu) return;
+            var personalBaseline = getCollectiveStudentBaselineExcludingItem(baselineInfo.stats, stu);
+            var deviation = personalBaseline == null ? 0 : Math.max(0, personalBaseline - stu.rate) * 100;
+            var flagged = anomalySets[xi].has(row);
+            data.push({
+                value:[xi, yi, Math.round(deviation * 10) / 10],
+                studentMeta:{
+                    name:stu.name || '',
+                    className:stu.className || '',
+                    questionIndex:qm.index,
+                    rate:stu.rate * 100,
+                    baseline:personalBaseline == null ? null : personalBaseline * 100,
+                    deviation:deviation,
+                    flagged:flagged
+                },
+                itemStyle:{
+                    borderColor:flagged ? '#b91c1c' : '#ffffff',
+                    borderWidth:flagged ? 1.4 : 0.8
+                }
+            });
+        });
+    });
+
+    var studentLabels = studentRows.map(function(row) {
+        var name = String(row[model.fd.nameField] || '');
+        var cls = String(row[model.fd.classField] || '');
+        return name + (cls ? ' · ' + cls : '');
+    });
+    var colLabels = questions.map(function(qm){ return qm.label; });
+
+    // 75% of the previous drilldown cell size.
+    var cellWidth = questions.length > 36 ? 30 : 36;
+    var rowHeight = studentRows.length > 28 ? 19 : 23;
+    chartEl.style.width = Math.max(820, questions.length * cellWidth + 190) + 'px';
+    chartEl.style.height = Math.max(300, studentRows.length * rowHeight + 140) + 'px';
+
+    if (summaryEl) {
+        var abnormalStudents = studentRows.filter(function(row){ return (anomalyCountByRow.get(row) || 0) > 0; }).length;
+        summaryEl.textContent = '学生 ' + studentRows.length + ' 人 · 小题 ' + questions.length + ' 题 · 存在个性异常学生 ' + abnormalStudents + ' 人'
+            + (onlyAbnormal ? ' · 仅显示异常题' : '');
+    }
+    if (legendEl) {
+        legendEl.textContent = '学生 × 小题：颜色表示本题低于该生其余小题平均的幅度；越红越偏离个人常态，红色边框为系统已判定个性异常';
+    }
+
+    if (chartEl.__chart) { try { chartEl.__chart.dispose(); } catch(e) {} }
+    var chart = echarts.init(chartEl, null, {renderer:'svg'});
+    chartEl.__chart = chart;
+    var maxVal = Math.max(40, Math.ceil(Math.max.apply(null, data.map(function(d){ return Number(d.value[2]) || 0; })) / 10) * 10);
+    chart.setOption({
+        animation:false,
+        tooltip:{
+            confine:true,
+            formatter:function(params) {
+                if (!params || !params.data || !params.data.studentMeta) return '';
+                var m = params.data.studentMeta;
+                var qm = model.questions[m.questionIndex];
+                return '<b>' + escapeHtml(m.name) + ' · ' + escapeHtml(qm ? qm.label : '') + '</b>'
+                    + '<br/>班级：' + escapeHtml(m.className)
+                    + '<br/>本题得分率：' + Math.round(m.rate) + '%'
+                    + '<br/>其余题均值：' + (m.baseline == null ? '-' : Math.round(m.baseline) + '%')
+                    + '<br/>低于个人常态：' + Math.round(m.deviation) + ' 个百分点'
+                    + (m.flagged ? '<br/><span style="color:#b91c1c;font-weight:700;">系统判定：个性异常</span>' : '');
+            }
+        },
+        grid:{left:132,right:28,top:28,bottom:88},
+        xAxis:{
+            type:'category',data:colLabels,axisTick:{show:false},splitArea:{show:true},
+            axisLabel:{interval:0,rotate:questions.length > 30 ? 45 : 0,fontSize:9,color:'#475569'}
+        },
+        yAxis:{
+            type:'category',data:studentLabels,inverse:true,axisTick:{show:false},axisLine:{show:false},splitArea:{show:true},
+            axisLabel:{fontSize:10,color:'#334155',width:120,overflow:'truncate'}
+        },
+        visualMap:{
+            min:0,max:maxVal,orient:'horizontal',left:'center',bottom:18,calculable:false,
+            text:['高偏离','低偏离'],textStyle:{fontSize:11,color:'#64748b'},
+            inRange:{color:['#f8fafc','#ffedd5','#fdba74','#f97316','#dc2626','#7f1d1d']}
+        },
+        series:[{
+            type:'heatmap',data:data,progressive:0,label:{show:false},
+            emphasis:{itemStyle:{borderColor:'#0f172a',borderWidth:2,shadowBlur:5,shadowColor:'rgba(15,23,42,.2)'}}
+        }]
+    });
+    chart.off('click');
+    chart.resize();
+}
+
+function showCollectiveHeatmapCellDetail(questionIndex, rowIndex) {
+    var model = collectiveHeatmapContext;
+    if (!model) return;
+    var qm = model.questions[questionIndex];
+    var rowInfo = model.rows[rowIndex];
+    var cell = qm && qm.cells[rowIndex];
+    if (!qm || !rowInfo || !cell) return;
+
+    var anomalyRows = new Set((qm.individualEntry && qm.individualEntry.affected || []).map(function(x) { return x.row; }));
+    var lowRows = new Set(qm.q.students.filter(function(x) { return x.rate < model.threshold; }).map(function(x) { return x.row; }));
+    var baselineInfo = buildCollectiveStudentBaselines(model.questions.map(function(x){ return x.q; }));
+
+    var abnormalStudents;
+    var abnormalType;
+    if (rowIndex === 0 && qm.commonEntry) {
+        abnormalStudents = cell.qStudents.filter(function(x){ return lowRows.has(x.row); });
+        abnormalType = '低于阈值';
+    } else {
+        abnormalStudents = cell.qStudents.filter(function(x){ return anomalyRows.has(x.row); });
+        abnormalType = '个性异常';
+    }
+    abnormalStudents.sort(function(a,b){ return a.rate - b.rate; });
+
+    var title = qm.label + ' · ' + rowInfo.label + ' · 异常学生';
+    var html = '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;">'
+        + '<span style="font-size:12px;color:#475569;">平均得分率 <b style="font-size:16px;color:#0f172a;">' + (cell.avgRate == null ? '-' : Math.round(cell.avgRate*100) + '%') + '</b></span>'
+        + '<span style="font-size:12px;color:#475569;">' + escapeHtml(abnormalType) + ' <b style="font-size:16px;color:#b91c1c;">' + abnormalStudents.length + ' / ' + cell.qStudents.length + '</b></span>'
+        + '</div>';
+
+    if (qm.commonEntry) {
+        html += '<div style="margin-bottom:9px;padding:7px 9px;border-radius:7px;background:#fff1f2;color:#9f1239;font-size:12px;font-weight:700;">该题全班平均得分率低于当前阈值，属于共性异常。</div>';
+    }
+    html += '<div style="margin-bottom:10px;font-size:12px;color:#475569;"><b>题目：</b>' + escapeHtml(qm.q.title || qm.label || '') + '</div>';
+
+    if (!abnormalStudents.length) {
+        html += '<div class="diagnosis-empty" style="padding:24px 12px;">当前群体在这道题上没有识别到异常学生。</div>';
+        showStudentListModal(title, html);
+            return;
+    }
+
+    html += '<div style="overflow:auto;max-height:520px;"><table class="diagnosis-detail-table"><thead><tr><th>#</th><th>姓名</th><th>班级</th><th>本题得分率</th><th>其余题均值</th><th>偏离</th></tr></thead><tbody>';
+    abnormalStudents.forEach(function(x, i) {
+        var personal = getCollectiveStudentBaselineExcludingItem(baselineInfo.stats, x);
+        var gap = personal == null ? null : Math.max(0, personal - x.rate);
+        html += '<tr><td class="diag-num">' + (i+1) + '</td><td>' + escapeHtml(x.name || '') + '</td><td>' + escapeHtml(x.className || '') + '</td>'
+            + '<td class="diag-num">' + Math.round(x.rate*100) + '%</td>'
+            + '<td class="diag-num">' + (personal == null ? '-' : Math.round(personal*100) + '%') + '</td>'
+            + '<td class="diag-num" style="color:#b91c1c;font-weight:700;">' + (gap == null ? '-' : '-' + Math.round(gap*100) + '个百分点') + '</td></tr>';
+    });
+    html += '</tbody></table></div>';
+    showStudentListModal(title, html);
+}
+
+
 
 function renderCollectiveTables() {
     const fd = getCollectiveFilteredData();
@@ -7814,9 +8516,11 @@ document.getElementById('crossExamBtn').addEventListener('click', renderCrossExa
 updateCrossExamRankRangeUI();
 
 // Collective analysis
-document.getElementById('collectiveClassFilter').addEventListener('change', () => { renderCollectiveTables(); renderCollectiveRankBar(); document.getElementById('rankedAnalysisResult').innerHTML = ''; document.getElementById('levelAnalysisResult').innerHTML = ''; clearCollectiveQuestionGroupContexts('rank'); clearCollectiveQuestionGroupContexts('level'); document.getElementById('collectiveStudentQueryResult').innerHTML = ''; document.getElementById('questionStudentsResult').style.display = 'none'; });
-document.getElementById('collectiveSubjectFilter').addEventListener('change', () => { renderCollectiveTables(); renderCollectiveRankBar(); renderScoreDistChart(); document.getElementById('rankedAnalysisResult').innerHTML = ''; document.getElementById('levelAnalysisResult').innerHTML = ''; clearCollectiveQuestionGroupContexts('rank'); clearCollectiveQuestionGroupContexts('level'); document.getElementById('collectiveStudentQueryResult').innerHTML = ''; populateLevelCheckboxes(); document.getElementById('questionStudentsResult').style.display = 'none'; });
-document.getElementById('applyCollectiveThresholdBtn').addEventListener('click', () => { collectiveThreshold = +document.getElementById('collectiveThresholdInput').value || 0; renderCollectiveTables(); });
+document.getElementById('collectiveHeatmapMode').addEventListener('change', function() { renderCollectiveHeatmap(); });
+document.getElementById('collectiveHeatmapOnlyAbnormal').addEventListener('change', function() { renderCollectiveHeatmap(); });
+document.getElementById('collectiveClassFilter').addEventListener('change', () => { renderCollectiveHeatmap(); renderCollectiveTables(); renderCollectiveRankBar(); document.getElementById('rankedAnalysisResult').innerHTML = ''; document.getElementById('levelAnalysisResult').innerHTML = ''; clearCollectiveQuestionGroupContexts('rank'); clearCollectiveQuestionGroupContexts('level'); document.getElementById('collectiveStudentQueryResult').innerHTML = ''; document.getElementById('questionStudentsResult').style.display = 'none'; });
+document.getElementById('collectiveSubjectFilter').addEventListener('change', () => { renderCollectiveHeatmap(); renderCollectiveTables(); renderCollectiveRankBar(); renderScoreDistChart(); document.getElementById('rankedAnalysisResult').innerHTML = ''; document.getElementById('levelAnalysisResult').innerHTML = ''; clearCollectiveQuestionGroupContexts('rank'); clearCollectiveQuestionGroupContexts('level'); document.getElementById('collectiveStudentQueryResult').innerHTML = ''; populateLevelCheckboxes(); document.getElementById('questionStudentsResult').style.display = 'none'; });
+document.getElementById('applyCollectiveThresholdBtn').addEventListener('click', () => { collectiveThreshold = +document.getElementById('collectiveThresholdInput').value || 0; renderCollectiveHeatmap(); renderCollectiveTables(); });
 document.getElementById('collectiveRankApplyBtn').addEventListener('click', renderRankedAnalysis);
 document.getElementById('levelApplyBtn').addEventListener('click', renderLevelAnalysis);
 document.getElementById('clearCollectiveStudentBtn').addEventListener('click', () => { document.getElementById('collectiveStudentQueryInput').value = ''; document.getElementById('collectiveStudentQueryResult').innerHTML = ''; hideStudentSuggest(document.getElementById('collectiveStudentSuggest')); });
